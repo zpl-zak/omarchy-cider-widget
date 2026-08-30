@@ -117,7 +117,6 @@ If the panel says the key is unavailable, import it into the user service enviro
 - The Python helper sends `CIDER_API_KEY` only in Cider's `apptoken` header. It accepts HTTP loopback hosts only and disables proxy use for RPC requests.
 - The token is read from the plugin process or the systemd user service environment. The plugin does not pass it as a command argument, print it, or write it to a file.
 - Album art is loaded from URLs returned by Cider, normally Apple's image CDN. The API token is not attached to those image requests.
-- The plugin has no install hook, does not use `sudo`, and does not contact an analytics service.
 
 ## Development
 
