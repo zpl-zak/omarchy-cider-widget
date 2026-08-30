@@ -14,8 +14,6 @@ An Omarchy widget for controlling [Cider](https://cider.sh/) and Apple Music pla
 - Shows the tracks after the current item in Cider's mixed history and queue response.
 - Exposes playback and panel actions through `omarchy-shell zpl.cider ...`.
 
-The Cider API also supports playing Apple Music URLs and catalog items, adding the current song to the library, rating, and queue edits. Those actions are intentionally outside the first widget release.
-
 ## Requirements
 
 - Omarchy 4 with the Quickshell plugin system
