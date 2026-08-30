@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -z ${CIDER_API_KEY:-} ]]; then
+  printf 'CIDER_API_KEY is not exported in this shell.\n' >&2
+  exit 1
+fi
+
+systemctl --user import-environment CIDER_API_KEY
+omarchy restart shell
+printf 'Imported CIDER_API_KEY and restarted Omarchy Shell.\n'

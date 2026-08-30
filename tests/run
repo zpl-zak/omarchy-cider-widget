@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+node --test "$repo_root/tests/model.test.js"
+python3 -m unittest discover -s "$repo_root/tests" -p 'test_*.py'
+bash -n "$repo_root/scripts/import-key" "$repo_root/tests/run"
+
+if command -v omarchy-plugin-validate >/dev/null 2>&1; then
+  omarchy-plugin-validate "$repo_root"
+fi
+
+qml_formatter=""
+if [[ -x /usr/lib/qt6/bin/qmlformat ]]; then
+  qml_formatter=/usr/lib/qt6/bin/qmlformat
+elif command -v qmlformat >/dev/null 2>&1; then
+  qml_formatter="$(command -v qmlformat)"
+fi
+
+if [[ -n "$qml_formatter" ]]; then
+  for qml_file in Panel.qml Service.qml tests/qml/tst_service.qml; do
+    "$qml_formatter" "$repo_root/$qml_file" >/dev/null
+  done
+fi
+
+qml_test_runner=""
+if [[ -x /usr/lib/qt6/bin/qmltestrunner ]]; then
+  qml_test_runner=/usr/lib/qt6/bin/qmltestrunner
+elif command -v qmltestrunner >/dev/null 2>&1; then
+  qml_test_runner="$(command -v qmltestrunner)"
+fi
+
+if [[ -n "$qml_test_runner" ]]; then
+  env -u QT_QPA_PLATFORMTHEME \
+    QT_QPA_PLATFORM=offscreen \
+    QT_QUICK_BACKEND=software \
+    "$qml_test_runner" \
+    -input "$repo_root/tests/qml" \
+    -import "$repo_root/tests/qml/imports" \
+    -o -,txt
+fi
+
+git -C "$repo_root" diff --check

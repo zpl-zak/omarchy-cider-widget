@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "zpl.cider",
+  "name": "Cider",
+  "version": "1.0.0",
+  "author": "Dominik Madarász",
+  "description": "Control Cider and see Apple Music playback from the Omarchy bar.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Cider",
+    "description": "Now playing, transport controls, seek, volume, playback modes, and Up Next for Cider.",
+    "category": "Media",
+    "aliases": [
+      "apple music",
+      "music",
+      "player"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 2,
+      "queueLimit": 8
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Playback refresh interval (seconds)",
+        "min": 1,
+        "max": 30,
+        "step": 1,
+        "defaultValue": 2
+      },
+      {
+        "key": "queueLimit",
+        "type": "integer",
+        "label": "Up Next tracks",
+        "min": 3,
+        "max": 20,
+        "step": 1,
+        "defaultValue": 8
+      }
+    ]
+  }
+}
