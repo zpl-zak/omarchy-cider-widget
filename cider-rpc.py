@@ -22,6 +22,12 @@ PLAYBACK_PATH = "/api/v1/playback"
 REQUEST_TIMEOUT_SEC = 3.0
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+KEYRING_ATTRIBUTES = [
+    "application",
+    "omarchy-cider-widget",
+    "credential",
+    "api-key",
+]
 
 
 @dataclass
@@ -70,9 +76,22 @@ def api_key() -> str:
                     value = line.partition("=")[2].strip()
                     break
     if not value:
+        try:
+            completed = subprocess.run(
+                ["secret-tool", "lookup", *KEYRING_ATTRIBUTES],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            completed = None
+        if completed and completed.returncode == 0:
+            value = completed.stdout.strip()
+    if not value:
         raise RpcFailure(
             "missing_api_key",
-            "CIDER_API_KEY is not available to this process",
+            "Cider API key is not configured",
             3,
         )
     return value
@@ -172,7 +191,7 @@ def normalize_track(info: Any) -> dict[str, Any] | None:
     }
 
 
-def normalize_queue_item(item: Any) -> dict[str, Any] | None:
+def normalize_queue_item(item: Any, queue_index: int, skip_count: int) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
     attributes = item.get("attributes")
@@ -185,7 +204,8 @@ def normalize_queue_item(item: Any) -> dict[str, Any] | None:
     return {
         "id": identifier,
         "type": str(item.get("type") or "song"),
-        "queueIndex": int(as_number(item.get("index"), 0)),
+        "queueIndex": queue_index,
+        "skipCount": skip_count,
         "title": title or "Unknown track",
         "artist": str(attributes.get("artistName") or ""),
         "album": str(attributes.get("albumName") or ""),
@@ -249,8 +269,8 @@ def queue_payload(limit: int) -> dict[str, Any]:
 
     start = current_index + 1 if current_index >= 0 else 0
     up_next = []
-    for item in queue[start:]:
-        normalized = normalize_queue_item(item)
+    for index, item in enumerate(queue[start:], start=start):
+        normalized = normalize_queue_item(item, index + 1, index - current_index)
         if normalized:
             up_next.append(normalized)
         if len(up_next) >= limit:
@@ -277,7 +297,21 @@ ACTION_PATHS = {
 }
 
 
-def action_payload(name: str, raw_value: str | None) -> dict[str, Any]:
+def positive_integer(raw_value: str | None, label: str, maximum: int = 100_000) -> int:
+    try:
+        value = int(raw_value or "")
+    except ValueError:
+        value = 0
+    if value < 1 or value > maximum:
+        raise RpcFailure("invalid_argument", f"{label} must be between 1 and {maximum}", 2)
+    return value
+
+
+def action_payload(
+    name: str,
+    raw_value: str | None,
+    raw_second_value: str | None = None,
+) -> dict[str, Any]:
     if name in ACTION_PATHS:
         suffix, body = ACTION_PATHS[name]
     elif name == "volume":
@@ -290,6 +324,22 @@ def action_payload(name: str, raw_value: str | None) -> dict[str, Any]:
         if not math.isfinite(value) or value < 0 or value > 86400:
             raise RpcFailure("invalid_argument", "Seek position must be a valid number of seconds", 2)
         suffix, body = "/seek", {"position": value}
+    elif name == "queueMove":
+        start_index = positive_integer(raw_value, "Queue start index")
+        destination_index = positive_integer(raw_second_value, "Queue destination index")
+        suffix, body = "/queue/move-to-position", {
+            "startIndex": start_index,
+            "destinationIndex": destination_index,
+            "returnQueue": False,
+        }
+    elif name == "queueRemove":
+        index = positive_integer(raw_value, "Queue index")
+        suffix, body = "/queue/remove-by-index", {"index": index}
+    elif name == "skipTo":
+        steps = positive_integer(raw_value, "Skip count", 20)
+        for _ in range(steps):
+            rpc_request("POST", PLAYBACK_PATH + "/next")
+        return {"action": name, "steps": steps}
     else:
         raise RpcFailure("invalid_action", "Unsupported Cider action", 2)
 
@@ -319,7 +369,11 @@ def main(argv: list[str]) -> int:
         elif command == "action":
             if len(argv) < 3:
                 raise RpcFailure("invalid_action", "Missing Cider action", 2)
-            data = action_payload(argv[2], argv[3] if len(argv) > 3 else None)
+            data = action_payload(
+                argv[2],
+                argv[3] if len(argv) > 3 else None,
+                argv[4] if len(argv) > 4 else None,
+            )
         else:
             raise RpcFailure("invalid_command", "Use status, queue, or action", 2)
     except RpcFailure as error:

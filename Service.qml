@@ -170,6 +170,7 @@ Item {
     } else if (name === "toggleShuffle") shuffleMode = shuffleMode === 0 ? 1 : 0
     else if (name === "toggleRepeat") repeatMode = (repeatMode + 1) % 3
     else if (name === "toggleAutoplay") autoplay = !autoplay
+    else if (name === "skipTo") playing = true
   }
 
   function runAction(name, value) {
@@ -206,7 +207,8 @@ Item {
     actionError = result.ok ? "" : Model.friendlyError(result)
     if (!result.ok) lastError = actionError
     refreshSoon.restart()
-    if (action && (action.name === "next" || action.name === "previous")) queueSoon.restart()
+    if (action && (action.name === "queueMove" || action.name === "queueRemove")) refreshQueue()
+    else if (action && ["next", "previous", "skipTo"].indexOf(action.name) !== -1) queueSoon.restart()
     Qt.callLater(root.startNextAction)
   }
 

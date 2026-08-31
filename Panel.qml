@@ -24,6 +24,8 @@ Panel {
     ? bar.shell.serviceFor(moduleName) : null
   readonly property var service: sharedService || localService
   readonly property bool hasTrack: service && service.hasTrack
+  readonly property bool queueControlsEnabled: service && service.connected
+    && !service.queueRefreshing && !service.actionRunning
   readonly property real displayPosition: service ? service.estimatedPosition(nowMs) : 0
   readonly property string title: hasTrack ? String(service.track.title || "") : ""
   readonly property string artist: hasTrack ? String(service.track.artist || "") : ""
@@ -48,7 +50,7 @@ Panel {
 
   function barTooltip() {
     if (!service || !service.probed) return "Cider · checking playback"
-    if (!service.configured) return "Cider · API key unavailable"
+    if (!service.configured) return "Cider · setup required"
     if (!service.connected) return "Cider · RPC unavailable"
     if (!hasTrack) return "Cider · nothing playing"
     return title + (artist ? " · " + artist : "")
@@ -63,12 +65,12 @@ Panel {
   }
 
   function setupTitle() {
-    return service.configured ? "Cider RPC is not reachable" : "CIDER_API_KEY is not available"
+    return service.configured ? "Cider RPC is not reachable" : "Cider API key is not configured"
   }
 
   function setupDetail() {
     if (!service.configured)
-      return "Import the exported key into the user service environment, then restart Omarchy Shell."
+      return "Run ~/.config/omarchy/plugins/zpl.cider/scripts/import-key once. The token will persist in your login keyring."
     return "Open Cider and enable RPC under Settings > Connectivity > Manage External Application Access."
   }
 
@@ -76,6 +78,26 @@ Panel {
     if (service.queueRefreshing) return "Reading the Cider queue…"
     if (!hasTrack) return "Start a song to see what plays next."
     return service.autoplay ? "Autoplay will choose what comes next." : "Nothing else is queued."
+  }
+
+  function playQueueItem(index) {
+    if (!queueControlsEnabled) return
+    var item = service.upNext[index]
+    service.runAction("skipTo", Number(item.skipCount || index + 1))
+  }
+
+  function moveQueueItem(index, offset) {
+    if (!queueControlsEnabled) return
+    var destination = index + offset
+    if (destination < 0 || destination >= service.upNext.length) return
+    var item = service.upNext[index]
+    var target = service.upNext[destination]
+    service.runAction("queueMove", [Number(item.queueIndex), Number(target.queueIndex)])
+  }
+
+  function removeQueueItem(index) {
+    if (!queueControlsEnabled || index < 0 || index >= service.upNext.length) return
+    service.runAction("queueRemove", Number(service.upNext[index].queueIndex))
   }
 
   onSettingsChanged: pushSettings()
@@ -642,10 +664,23 @@ Panel {
                 width: queueColumn.width
                 implicitHeight: queueRow.implicitHeight + Style.space(10)
                 radius: Style.spacing.labelGap
-                color: index === 0 ? Util.alpha(Color.accent, 0.08) : "transparent"
+                color: queueClick.containsMouse
+                  ? Style.hoverFillFor(root.foreground, Color.accent)
+                  : (index === 0 ? Util.alpha(Color.accent, 0.08) : "transparent")
                 borderSpec: index === 0
                   ? Border.controlSpec("normal", root.foreground, Color.accent)
                   : Border.none()
+
+                Behavior on color { ColorAnimation { duration: 60 } }
+
+                MouseArea {
+                  id: queueClick
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  enabled: root.queueControlsEnabled
+                  cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                  onClicked: root.playQueueItem(index)
+                }
 
                 RowLayout {
                   id: queueRow
@@ -715,6 +750,34 @@ Panel {
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     Layout.alignment: Qt.AlignVCenter
+                  }
+
+                  PanelActionButton {
+                    iconText: "↑"
+                    tooltipText: "Move earlier"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    enabled: root.queueControlsEnabled && index > 0
+                    onClicked: root.moveQueueItem(index, -1)
+                  }
+
+                  PanelActionButton {
+                    iconText: "↓"
+                    tooltipText: "Move later"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    enabled: root.queueControlsEnabled && index < root.service.upNext.length - 1
+                    onClicked: root.moveQueueItem(index, 1)
+                  }
+
+                  PanelActionButton {
+                    iconText: "󰅙"
+                    tooltipText: "Remove from Up Next"
+                    foreground: root.foreground
+                    hoverColor: root.urgent
+                    fontFamily: root.fontFamily
+                    enabled: root.queueControlsEnabled
+                    onClicked: root.removeQueueItem(index)
                   }
                 }
               }

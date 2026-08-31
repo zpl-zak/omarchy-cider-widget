@@ -1,11 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z ${CIDER_API_KEY:-} ]]; then
-  printf 'CIDER_API_KEY is not exported in this shell.\n' >&2
+if ! command -v secret-tool >/dev/null 2>&1; then
+  printf 'secret-tool is required. Install the libsecret package first.\n' >&2
   exit 1
 fi
 
-systemctl --user import-environment CIDER_API_KEY
+api_key=${CIDER_API_KEY:-}
+if [[ -z $api_key ]]; then
+  read -rsp 'Cider API token: ' api_key
+  printf '\n'
+fi
+
+if [[ -z $api_key ]]; then
+  printf 'The Cider API token cannot be empty.\n' >&2
+  exit 1
+fi
+
+printf '%s' "$api_key" | secret-tool store \
+  --label='Cider Omarchy widget API key' \
+  application omarchy-cider-widget \
+  credential api-key
+api_key=
+
+if ! secret-tool lookup \
+  application omarchy-cider-widget \
+  credential api-key >/dev/null; then
+  printf 'The Cider API token could not be read back from the keyring.\n' >&2
+  exit 1
+fi
+
+systemctl --user unset-environment CIDER_API_KEY
 omarchy restart shell
-printf 'Imported CIDER_API_KEY and restarted Omarchy Shell.\n'
+printf 'Saved the Cider API token in your login keyring and restarted Omarchy Shell.\n'

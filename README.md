@@ -12,13 +12,15 @@ An Omarchy widget for controlling [Cider](https://cider.sh/) and Apple Music pla
 - Sets Cider's own playback volume.
 - Toggles shuffle, repeat, and autoplay.
 - Shows the tracks after the current item in Cider's mixed history and queue response.
+- Plays any Up Next track on click, reorders the queue, and removes unwanted tracks.
 - Exposes playback and panel actions through `omarchy-shell zpl.cider ...`.
 
 ## Requirements
 
 - Omarchy 4 with the Quickshell plugin system
 - Cider with RPC enabled under `Settings > Connectivity > Manage External Application Access`
-- An API token exported as `CIDER_API_KEY`
+- A Cider API token stored in the desktop login keyring
+- `secret-tool` from the `libsecret` package
 - Python 3.10 or newer
 
 The current release is tested with Omarchy 4.0.1 and Cider 4.0.9.1.
@@ -39,23 +41,19 @@ omarchy plugin add https://github.com/zpl-zak/omarchy-cider-widget.git --enable
 
 ## First-time setup
 
-In Cider, open `Settings > Connectivity > Manage External Application Access`, enable RPC, and generate an API token. Read it without putting the value in your shell history, then import it into the user service environment:
-
-```bash
-read -rsp 'Cider API token: ' CIDER_API_KEY
-printf '\n'
-export CIDER_API_KEY
-~/.config/omarchy/plugins/zpl.cider/scripts/import-key
-unset CIDER_API_KEY
-```
-
-If `CIDER_API_KEY` is already exported, only run the helper:
+In Cider, open `Settings > Connectivity > Manage External Application Access`, enable RPC, and generate an API token. Run the setup helper and paste the token at its hidden prompt:
 
 ```bash
 ~/.config/omarchy/plugins/zpl.cider/scripts/import-key
 ```
 
-The import lasts for the current login session. Repeat it after a new login unless your session setup already exports `CIDER_API_KEY`.
+The helper stores the token in your desktop login keyring and restarts Omarchy Shell. The keyring unlocks with your login, so the widget keeps working after a reboot. The token does not go into shell history, command arguments, plugin settings, or a plaintext file.
+
+If `CIDER_API_KEY` is already exported, the same helper imports it without prompting:
+
+```bash
+~/.config/omarchy/plugins/zpl.cider/scripts/import-key
+```
 
 ## Update
 
@@ -67,10 +65,11 @@ omarchy plugin update zpl.cider
 
 ## Remove
 
-Remove the widget and clear its token from the user service environment:
+Remove the widget and its stored token:
 
 ```bash
 omarchy plugin remove zpl.cider
+secret-tool clear application omarchy-cider-widget credential api-key
 systemctl --user unset-environment CIDER_API_KEY
 omarchy restart shell
 ```
@@ -85,7 +84,7 @@ On the bar:
 - Right click refreshes playback state.
 - Mouse wheel moves backward or forward through tracks.
 
-Inside the panel, use the buttons and sliders directly. Keyboard shortcuts are `P` for play or pause, `N` for next, `B` for previous, `S` for shuffle, `R` for repeat, `A` for autoplay, and `O` to open Cider.
+Inside the panel, use the buttons and sliders directly. Click an Up Next track to advance to it, use the arrows to move it earlier or later, or use the remove button to drop it from the queue. Keyboard shortcuts are `P` for play or pause, `N` for next, `B` for previous, `S` for shuffle, `R` for repeat, `A` for autoplay, and `O` to open Cider.
 
 The plugin settings expose the playback polling interval and the number of Up Next tracks. Playback defaults to a two-second refresh. The larger queue response is fetched only while the panel is open.
 
@@ -110,12 +109,12 @@ Check the RPC adapter without changing playback:
 ./cider-rpc.py queue 5 | jq
 ```
 
-If the panel says the key is unavailable, import it into the user service environment. If it says RPC is unreachable, confirm Cider is running and its external application access setting is enabled.
+If the panel says the key is not configured, run `~/.config/omarchy/plugins/zpl.cider/scripts/import-key`. If it says RPC is unreachable, confirm Cider is running and its external application access setting is enabled.
 
 ## Privacy and security
 
 - The Python helper sends `CIDER_API_KEY` only in Cider's `apptoken` header. It accepts HTTP loopback hosts only and disables proxy use for RPC requests.
-- The token is read from the plugin process or the systemd user service environment. The plugin does not pass it as a command argument, print it, or write it to a file.
+- The token is read from the plugin process, the systemd user service environment, or the desktop login keyring, in that order. The plugin does not pass it as a command argument, print it, or write it to a plaintext file.
 - Album art is loaded from URLs returned by Cider, normally Apple's image CDN. The API token is not attached to those image requests.
 
 ## Development

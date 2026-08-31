@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "zpl.cider",
   "name": "Cider",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Dominik Madarász",
   "description": "Control Cider and see Apple Music playback from the Omarchy bar.",
   "kinds": [
@@ -16,7 +16,7 @@
   },
   "barWidget": {
     "displayName": "Cider",
-    "description": "Now playing, transport controls, seek, volume, playback modes, and Up Next for Cider.",
+    "description": "Now playing, transport controls, seek, volume, playback modes, and an editable Up Next queue for Cider.",
     "category": "Media",
     "aliases": [
       "apple music",

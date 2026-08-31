@@ -86,7 +86,7 @@ TestCase {
     compare(service.probed, true)
     compare(service.configured, false)
     compare(service.connected, false)
-    compare(service.lastError, "CIDER_API_KEY is not available to Omarchy Shell.")
+    compare(service.lastError, "Cider API key is not configured.")
   }
 
   function test_queue_watch_loads_up_next() {
@@ -114,6 +114,23 @@ TestCase {
     actionProcess().complete(0, envelope({ action: "volume" }), "")
     wait(220)
     verify(statusProcess().running)
+  }
+
+  function test_queue_action_uses_absolute_indices_and_refreshes_queue() {
+    connectService()
+    service.beginQueueWatch()
+    queueProcess().complete(0, envelope({
+      upNext: [
+        { id: "song-2", queueIndex: 3, title: "Next One" },
+        { id: "song-3", queueIndex: 4, title: "Next Two" }
+      ]
+    }), "")
+
+    verify(service.runAction("queueMove", [4, 3]))
+    compare(actionProcess().command.slice(-4), ["action", "queueMove", "4", "3"])
+    actionProcess().complete(0, envelope({ action: "queueMove" }), "")
+    verify(queueProcess().running)
+    service.endQueueWatch()
   }
 
   function test_unknown_action_is_rejected() {

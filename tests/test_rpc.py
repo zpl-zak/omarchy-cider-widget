@@ -60,6 +60,8 @@ class CiderRpcTests(unittest.TestCase):
 
         self.assertEqual(payload["currentQueueIndex"], 1)
         self.assertEqual([item["id"] for item in payload["upNext"]], ["next-1"])
+        self.assertEqual(payload["upNext"][0]["queueIndex"], 3)
+        self.assertEqual(payload["upNext"][0]["skipCount"], 1)
 
     def test_action_allowlist_and_payloads(self):
         calls = []
@@ -77,9 +79,46 @@ class CiderRpcTests(unittest.TestCase):
         with self.assertRaises(RPC.RpcFailure):
             RPC.action_payload("clearQueue", None)
 
+    def test_queue_actions_use_documented_playback_endpoints(self):
+        calls = []
+
+        def fake_request(method, path, body=None):
+            calls.append((method, path, body))
+            return {"status": "ok"}
+
+        with mock.patch.object(RPC, "rpc_request", side_effect=fake_request):
+            RPC.action_payload("queueMove", "4", "3")
+            RPC.action_payload("queueRemove", "4")
+            payload = RPC.action_payload("skipTo", "3")
+
+        self.assertEqual(calls[0], (
+            "POST",
+            "/api/v1/playback/queue/move-to-position",
+            {"startIndex": 4, "destinationIndex": 3, "returnQueue": False},
+        ))
+        self.assertEqual(calls[1], (
+            "POST",
+            "/api/v1/playback/queue/remove-by-index",
+            {"index": 4},
+        ))
+        self.assertEqual(calls[2:], [
+            ("POST", "/api/v1/playback/next", None),
+            ("POST", "/api/v1/playback/next", None),
+            ("POST", "/api/v1/playback/next", None),
+        ])
+        self.assertEqual(payload, {"action": "skipTo", "steps": 3})
+
+        with self.assertRaises(RPC.RpcFailure):
+            RPC.action_payload("queueRemove", "0")
+        with self.assertRaises(RPC.RpcFailure):
+            RPC.action_payload("skipTo", "21")
+
     def test_missing_key_error_does_not_echo_secret_material(self):
         manager = mock.Mock(returncode=0, stdout="SOME_OTHER_VALUE=1\n")
-        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(RPC.subprocess, "run", return_value=manager):
+        keyring = mock.Mock(returncode=1, stdout="")
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            RPC.subprocess, "run", side_effect=[manager, keyring]
+        ):
             with self.assertRaises(RPC.RpcFailure) as context:
                 RPC.api_key()
         encoded = json.dumps({"code": context.exception.code, "message": context.exception.message})
@@ -99,6 +138,21 @@ class CiderRpcTests(unittest.TestCase):
             text=True,
             timeout=2,
         )
+
+    def test_reads_key_from_login_keyring_after_environment_sources(self):
+        manager = mock.Mock(returncode=0, stdout="OTHER=1\n")
+        keyring = mock.Mock(returncode=0, stdout="keyring-secret\n")
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            RPC.subprocess, "run", side_effect=[manager, keyring]
+        ) as run_mock:
+            self.assertEqual(RPC.api_key(), "keyring-secret")
+        self.assertEqual(run_mock.call_args_list[1], mock.call(
+            ["secret-tool", "lookup", *RPC.KEYRING_ATTRIBUTES],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ))
 
 
 if __name__ == "__main__":

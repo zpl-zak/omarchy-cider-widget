@@ -33,7 +33,7 @@ function parseResponse(raw) {
 
 function friendlyError(result) {
   var code = String(result && result.code || "")
-  if (code === "missing_api_key") return "CIDER_API_KEY is not available to Omarchy Shell."
+  if (code === "missing_api_key") return "Cider API key is not configured."
   if (code === "unauthorized") return "Cider rejected CIDER_API_KEY. Create or export a valid app token."
   if (code === "unavailable") return "Cider RPC is not reachable on localhost:10767."
   if (code === "invalid_rpc_url") return "CIDER_RPC_URL must point to Cider on this machine."
@@ -96,15 +96,19 @@ function queueMeta(item) {
 function validAction(name) {
   return [
     "play", "pause", "playPause", "next", "previous", "seek", "volume",
-    "toggleShuffle", "toggleRepeat", "toggleAutoplay"
+    "toggleShuffle", "toggleRepeat", "toggleAutoplay", "queueMove",
+    "queueRemove", "skipTo"
   ].indexOf(String(name || "")) !== -1
 }
 
 function actionCommand(helperPath, action) {
   if (!action || !validAction(action.name)) return []
   var command = ["python3", String(helperPath || ""), "action", String(action.name)]
-  if (action.value !== undefined && action.value !== null && String(action.value) !== "")
-    command.push(String(action.value))
+  var values = Array.isArray(action.value) ? action.value : [action.value]
+  for (var index = 0; index < values.length; index++) {
+    var value = values[index]
+    if (value !== undefined && value !== null && String(value) !== "") command.push(String(value))
+  }
   return command
 }
 
