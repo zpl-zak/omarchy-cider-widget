@@ -121,13 +121,13 @@ TestCase {
     service.beginQueueWatch()
     queueProcess().complete(0, envelope({
       upNext: [
-        { id: "song-2", queueIndex: 3, title: "Next One" },
-        { id: "song-3", queueIndex: 4, title: "Next Two" }
+        { id: "song-2", queueIndex: 2, title: "Next One" },
+        { id: "song-3", queueIndex: 3, title: "Next Two" }
       ]
     }), "")
 
-    verify(service.runAction("queueMove", [4, 3]))
-    compare(actionProcess().command.slice(-4), ["action", "queueMove", "4", "3"])
+    verify(service.runAction("queueMove", [3, 2]))
+    compare(actionProcess().command.slice(-4), ["action", "queueMove", "3", "2"])
     actionProcess().complete(0, envelope({ action: "queueMove" }), "")
     verify(queueProcess().running)
     service.endQueueWatch()

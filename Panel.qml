@@ -666,10 +666,8 @@ Panel {
                 radius: Style.spacing.labelGap
                 color: queueClick.containsMouse
                   ? Style.hoverFillFor(root.foreground, Color.accent)
-                  : (index === 0 ? Util.alpha(Color.accent, 0.08) : "transparent")
-                borderSpec: index === 0
-                  ? Border.controlSpec("normal", root.foreground, Color.accent)
-                  : Border.none()
+                  : "transparent"
+                borderSpec: Border.none()
 
                 Behavior on color { ColorAnimation { duration: 60 } }
 
@@ -729,7 +727,6 @@ Panel {
                       color: root.foreground
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.bodySmall
-                      font.bold: index === 0
                       elide: Text.ElideRight
                     }
 

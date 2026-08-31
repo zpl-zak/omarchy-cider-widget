@@ -270,7 +270,7 @@ def queue_payload(limit: int) -> dict[str, Any]:
     start = current_index + 1 if current_index >= 0 else 0
     up_next = []
     for index, item in enumerate(queue[start:], start=start):
-        normalized = normalize_queue_item(item, index + 1, index - current_index)
+        normalized = normalize_queue_item(item, index, index - current_index)
         if normalized:
             up_next.append(normalized)
         if len(up_next) >= limit:
@@ -297,13 +297,22 @@ ACTION_PATHS = {
 }
 
 
-def positive_integer(raw_value: str | None, label: str, maximum: int = 100_000) -> int:
+def integer_in_range(
+    raw_value: str | None,
+    label: str,
+    minimum: int,
+    maximum: int,
+) -> int:
     try:
         value = int(raw_value or "")
     except ValueError:
-        value = 0
-    if value < 1 or value > maximum:
-        raise RpcFailure("invalid_argument", f"{label} must be between 1 and {maximum}", 2)
+        value = minimum - 1
+    if value < minimum or value > maximum:
+        raise RpcFailure(
+            "invalid_argument",
+            f"{label} must be between {minimum} and {maximum}",
+            2,
+        )
     return value
 
 
@@ -325,18 +334,18 @@ def action_payload(
             raise RpcFailure("invalid_argument", "Seek position must be a valid number of seconds", 2)
         suffix, body = "/seek", {"position": value}
     elif name == "queueMove":
-        start_index = positive_integer(raw_value, "Queue start index")
-        destination_index = positive_integer(raw_second_value, "Queue destination index")
+        start_index = integer_in_range(raw_value, "Queue start index", 0, 100_000)
+        destination_index = integer_in_range(raw_second_value, "Queue destination index", 0, 100_000)
         suffix, body = "/queue/move-to-position", {
             "startIndex": start_index,
             "destinationIndex": destination_index,
             "returnQueue": False,
         }
     elif name == "queueRemove":
-        index = positive_integer(raw_value, "Queue index")
+        index = integer_in_range(raw_value, "Queue index", 0, 100_000)
         suffix, body = "/queue/remove-by-index", {"index": index}
     elif name == "skipTo":
-        steps = positive_integer(raw_value, "Skip count", 20)
+        steps = integer_in_range(raw_value, "Skip count", 1, 20)
         for _ in range(steps):
             rpc_request("POST", PLAYBACK_PATH + "/next")
         return {"action": name, "steps": steps}

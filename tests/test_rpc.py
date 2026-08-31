@@ -60,7 +60,7 @@ class CiderRpcTests(unittest.TestCase):
 
         self.assertEqual(payload["currentQueueIndex"], 1)
         self.assertEqual([item["id"] for item in payload["upNext"]], ["next-1"])
-        self.assertEqual(payload["upNext"][0]["queueIndex"], 3)
+        self.assertEqual(payload["upNext"][0]["queueIndex"], 2)
         self.assertEqual(payload["upNext"][0]["skipCount"], 1)
 
     def test_action_allowlist_and_payloads(self):
@@ -79,7 +79,7 @@ class CiderRpcTests(unittest.TestCase):
         with self.assertRaises(RPC.RpcFailure):
             RPC.action_payload("clearQueue", None)
 
-    def test_queue_actions_use_documented_playback_endpoints(self):
+    def test_queue_actions_use_zero_based_playback_indices(self):
         calls = []
 
         def fake_request(method, path, body=None):
@@ -88,7 +88,7 @@ class CiderRpcTests(unittest.TestCase):
 
         with mock.patch.object(RPC, "rpc_request", side_effect=fake_request):
             RPC.action_payload("queueMove", "4", "3")
-            RPC.action_payload("queueRemove", "4")
+            RPC.action_payload("queueRemove", "0")
             payload = RPC.action_payload("skipTo", "3")
 
         self.assertEqual(calls[0], (
@@ -99,7 +99,7 @@ class CiderRpcTests(unittest.TestCase):
         self.assertEqual(calls[1], (
             "POST",
             "/api/v1/playback/queue/remove-by-index",
-            {"index": 4},
+            {"index": 0},
         ))
         self.assertEqual(calls[2:], [
             ("POST", "/api/v1/playback/next", None),
@@ -109,7 +109,7 @@ class CiderRpcTests(unittest.TestCase):
         self.assertEqual(payload, {"action": "skipTo", "steps": 3})
 
         with self.assertRaises(RPC.RpcFailure):
-            RPC.action_payload("queueRemove", "0")
+            RPC.action_payload("queueRemove", "-1")
         with self.assertRaises(RPC.RpcFailure):
             RPC.action_payload("skipTo", "21")
 
