@@ -65,6 +65,12 @@ class ManifestTests(unittest.TestCase):
         self.assertNotIn("artUrl", panel)
         self.assertIn("artSource", panel)
 
+    def test_background_refresh_does_not_change_panel_controls(self):
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
+        self.assertNotIn("service.refreshing", panel)
+        self.assertNotIn("service.queueRefreshing", panel)
+        self.assertIn("&& !service.actionRunning", panel)
+
 
 if __name__ == "__main__":
     unittest.main()

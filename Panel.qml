@@ -25,7 +25,7 @@ Panel {
   readonly property var service: sharedService || localService
   readonly property bool hasTrack: service && service.hasTrack
   readonly property bool queueControlsEnabled: service && service.connected
-    && !service.queueRefreshing && !service.actionRunning
+    && !service.actionRunning
   readonly property real displayPosition: service ? service.estimatedPosition(nowMs) : 0
   readonly property string title: hasTrack ? String(service.track.title || "") : ""
   readonly property string artist: hasTrack ? String(service.track.artist || "") : ""
@@ -75,7 +75,6 @@ Panel {
   }
 
   function queueEmptyText() {
-    if (service.queueRefreshing) return "Reading the Cider queue…"
     if (!hasTrack) return "Start a song to see what plays next."
     return service.autoplay ? "Autoplay will choose what comes next." : "Nothing else is queued."
   }
@@ -244,22 +243,11 @@ Panel {
               font.bold: true
             }
 
-            Text {
-              visible: root.service.refreshing
-              text: "SYNCING"
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              font.letterSpacing: 1.1
-            }
-
             PanelActionButton {
               iconText: "󰑐"
               tooltipText: "Refresh Cider"
               foreground: root.foreground
               fontFamily: root.fontFamily
-              enabled: !root.service.refreshing
               onClicked: root.service.refresh()
             }
 
@@ -627,11 +615,10 @@ Panel {
             }
 
             PanelActionButton {
-              iconText: root.service.queueRefreshing ? "󰑓" : "󰑐"
+              iconText: "󰑐"
               tooltipText: "Refresh Up Next"
               foreground: root.foreground
               fontFamily: root.fontFamily
-              enabled: !root.service.queueRefreshing
               onClicked: root.service.refreshQueue()
             }
           }
