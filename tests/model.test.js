@@ -18,6 +18,73 @@ test("parses successful and failed helper responses", () => {
   })
 })
 
+test("rejects oversized helper output and invalid success schemas", () => {
+  assert.equal(Model.parseJson("x".repeat(65537)).ok, false)
+  assert.equal(Model.parseResponse(JSON.stringify({ ok: true, data: [] })).ok, false)
+})
+
+test("validates and bounds status fields before exposing them", () => {
+  const cacheRoot = "/home/test/.cache/omarchy-cider-widget/artwork"
+  const safePath = cacheRoot + "/" + "a".repeat(64) + ".png"
+  const result = Model.parseStatusResponse(JSON.stringify({
+    ok: true,
+    data: {
+      connected: true,
+      playing: true,
+      track: {
+        id: "i".repeat(300),
+        type: "song",
+        title: "t".repeat(700),
+        artist: "Artist",
+        album: "Album",
+        artPath: safePath,
+        durationSec: 100,
+        positionSec: 500,
+        inLibrary: false,
+        inFavorites: true,
+        audioTraits: Array(20).fill("lossless")
+      },
+      volume: 5,
+      shuffleMode: 8,
+      repeatMode: 9,
+      autoplay: false,
+      fetchedAtMs: Date.now()
+    }
+  }), cacheRoot)
+
+  assert.equal(result.ok, true)
+  assert.equal(result.data.track.id.length, 256)
+  assert.equal(result.data.track.title.length, 512)
+  assert.equal(result.data.track.audioTraits.length, 8)
+  assert.equal(result.data.track.positionSec, 100)
+  assert.equal(result.data.track.artSource, "file://" + safePath)
+  assert.equal(result.data.volume, 1)
+  assert.equal(result.data.repeatMode, 2)
+})
+
+test("filters queue schema and rejects artwork outside the private cache", () => {
+  const cacheRoot = "/home/test/.cache/omarchy-cider-widget/artwork"
+  const rows = [{
+    id: "one",
+    type: "song",
+    queueIndex: 2,
+    skipCount: 1,
+    title: "Next",
+    artist: "Artist",
+    album: "Album",
+    artPath: "/tmp/not-approved.png",
+    durationSec: 60
+  }, { id: "bad", title: "Missing indices" }]
+  for (let index = 0; index < 30; index++) rows.push({
+    id: String(index), queueIndex: index, skipCount: 1, title: "Track"
+  })
+  const result = Model.parseQueueResponse(JSON.stringify({ ok: true, data: { upNext: rows } }), cacheRoot)
+  assert.equal(result.ok, true)
+  assert.equal(result.data.upNext.length, 19)
+  assert.equal(result.data.upNext[0].artSource, "")
+  assert.equal(result.data.upNext.some(item => item.id === "bad"), false)
+})
+
 test("maps setup failures to useful panel copy", () => {
   assert.equal(
     Model.friendlyError({ code: "missing_api_key", error: "missing" }),

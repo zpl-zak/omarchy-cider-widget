@@ -49,10 +49,15 @@ TestCase {
       playing: true,
       track: {
         id: "song-1",
+        type: "song",
         title: "Ego Brain",
         artist: "System Of A Down",
+        album: "Steal This Album!",
+        artPath: "",
         durationSec: 201,
         positionSec: 50,
+        inLibrary: false,
+        inFavorites: false,
         audioTraits: ["lossless"]
       },
       volume: 0.8,
@@ -96,8 +101,8 @@ TestCase {
     verify(queueProcess().running)
     queueProcess().complete(0, envelope({
       upNext: [
-        { id: "song-2", title: "Next One" },
-        { id: "song-3", title: "Next Two" }
+        { id: "song-2", queueIndex: 2, skipCount: 1, title: "Next One" },
+        { id: "song-3", queueIndex: 3, skipCount: 2, title: "Next Two" }
       ]
     }), "")
     compare(service.upNext.length, 2)
@@ -136,5 +141,34 @@ TestCase {
   function test_unknown_action_is_rejected() {
     connectService()
     verify(!service.runAction("clearQueue"))
+  }
+
+  function test_invalid_status_schema_is_not_assigned() {
+    statusProcess().complete(0, envelope({
+      connected: "yes",
+      playing: true,
+      autoplay: false,
+      track: null
+    }), "")
+    compare(service.connected, false)
+    compare(service.track, null)
+    compare(service.lastError, "Cider returned an invalid response schema")
+  }
+
+  function test_output_limit_terminates_helper() {
+    statusProcess().stdout.read(new Array(service.helperOutputLimit + 2).join("x"))
+    compare(statusProcess().signalsSent.length, 1)
+    compare(statusProcess().signalsSent[0], 15)
+    statusProcess().complete(143, "", "")
+    compare(service.connected, false)
+    compare(service.lastError, "Cider status helper exceeded its output limit")
+  }
+
+  function test_watchdog_requests_term_before_kill_grace() {
+    service.abortHelper("status", "Cider status helper timed out")
+    compare(statusProcess().signalsSent.length, 1)
+    compare(statusProcess().signalsSent[0], 15)
+    statusProcess().complete(143, "", "")
+    compare(service.lastError, "Cider status helper timed out")
   }
 }

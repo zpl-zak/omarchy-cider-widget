@@ -8,6 +8,7 @@ QtObject {
   property var stdout: null
   property var stderr: null
   property bool _completing: false
+  property var signalsSent: []
 
   signal exited(int exitCode, int exitStatus)
 
@@ -24,8 +25,17 @@ QtObject {
 
   function feed(stream, value) {
     if (!stream) return
-    stream.text = String(value || "")
-    stream.streamFinished()
+    if (typeof stream.read === "function") stream.read(String(value || ""))
+    else {
+      stream.text = String(value || "")
+      stream.streamFinished()
+    }
+  }
+
+  function signal(signalNumber) {
+    var next = signalsSent.slice()
+    next.push(signalNumber)
+    signalsSent = next
   }
 
   Component.onCompleted: ProcessRegistry.add(root)

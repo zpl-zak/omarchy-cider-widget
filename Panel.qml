@@ -352,13 +352,13 @@ Panel {
                 anchors.margins: Style.space(2)
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
-                source: root.hasTrack ? String(root.service.track.artUrl || "") : ""
+                source: root.hasTrack ? String(root.service.track.artSource || "") : ""
                 visible: source !== ""
               }
 
               Text {
                 anchors.centerIn: parent
-                visible: !root.hasTrack || !root.service.track.artUrl
+                visible: !root.hasTrack || !root.service.track.artSource
                 text: "󰝚"
                 color: root.foreground
                 font.family: root.fontFamily
@@ -700,7 +700,7 @@ Panel {
                     Image {
                       anchors.fill: parent
                       anchors.margins: Style.space(1)
-                      source: String(modelData.artUrl || "")
+                      source: String(modelData.artSource || "")
                       fillMode: Image.PreserveAspectCrop
                       asynchronous: true
                       visible: source !== ""
@@ -708,7 +708,7 @@ Panel {
 
                     Text {
                       anchors.centerIn: parent
-                      visible: !modelData.artUrl
+                      visible: !modelData.artSource
                       text: "󰝚"
                       color: root.dim
                       font.family: root.fontFamily

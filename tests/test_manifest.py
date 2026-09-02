@@ -56,6 +56,15 @@ class ManifestTests(unittest.TestCase):
         ]
         self.assertEqual(links, [])
 
+    def test_security_boundary_uses_streaming_output_and_local_artwork(self):
+        service = (ROOT / "Service.qml").read_text(encoding="utf-8")
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
+        self.assertFalse((ROOT / "AGENTS.md").exists())
+        self.assertNotIn("StdioCollector", service)
+        self.assertIn("SplitParser", service)
+        self.assertNotIn("artUrl", panel)
+        self.assertIn("artSource", panel)
+
 
 if __name__ == "__main__":
     unittest.main()

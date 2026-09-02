@@ -37,11 +37,25 @@ Item {
   property string _queueError: ""
   property string _actionOutput: ""
   property string _actionErrorOutput: ""
+  property string _statusFailure: ""
+  property string _queueFailure: ""
+  property string _actionFailure: ""
 
   readonly property string helperPath: decodeURIComponent(
     Qt.resolvedUrl("cider-rpc.py").toString().replace(/^file:\/\//, ""))
+  readonly property string artworkCacheRoot: {
+    var configured = String(Quickshell.env("XDG_CACHE_HOME") || "")
+    var home = String(Quickshell.env("HOME") || "")
+    var base = configured.length > 0 && configured.charAt(0) === "/" ? configured : home + "/.cache"
+    return base + "/omarchy-cider-widget/artwork"
+  }
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 2, 1, 30)
   readonly property int queueLimit: intSetting("queueLimit", 8, 3, 20)
+  readonly property int helperOutputLimit: 65536
+  readonly property int helperErrorLimit: 4096
+  readonly property int helperTimeoutMs: 9000
+  readonly property int helperKillGraceMs: 750
+  readonly property int pendingActionLimit: 32
   readonly property bool hasTrack: track !== null && (track.title || track.artist)
   readonly property bool actionRunning: actionProcess.running || _actions.length > 0
 
@@ -80,12 +94,14 @@ Item {
     refreshing = true
     _statusOutput = ""
     _statusError = ""
+    _statusFailure = ""
     statusProcess.command = ["python3", helperPath, "status"]
+    statusWatchdog.restart()
     statusProcess.running = true
   }
 
   function applyStatus(raw) {
-    var result = Model.parseResponse(raw)
+    var result = Model.parseStatusResponse(raw, artworkCacheRoot)
     probed = true
     refreshing = false
     if (!result.ok) {
@@ -127,19 +143,21 @@ Item {
     queueRefreshing = true
     _queueOutput = ""
     _queueError = ""
+    _queueFailure = ""
     queueProcess.command = ["python3", helperPath, "queue", String(queueLimit)]
+    queueWatchdog.restart()
     queueProcess.running = true
   }
 
   function applyQueue(raw) {
-    var result = Model.parseResponse(raw)
+    var result = Model.parseQueueResponse(raw, artworkCacheRoot)
     queueRefreshing = false
     if (!result.ok) {
       actionError = Model.friendlyError(result)
       finishQueueRefresh()
       return
     }
-    upNext = Array.isArray(result.data.upNext) ? result.data.upNext : []
+    upNext = result.data.upNext
     actionError = ""
     finishQueueRefresh()
   }
@@ -175,7 +193,6 @@ Item {
 
   function runAction(name, value) {
     if (!active || !configured || !connected || !Model.validAction(name)) return false
-    applyOptimisticAction(name, value)
 
     var next = []
     for (var i = 0; i < _actions.length; i++) {
@@ -183,6 +200,11 @@ Item {
       if ((name === "volume" || name === "seek") && queued.name === name) continue
       next.push(queued)
     }
+    if (next.length >= pendingActionLimit) {
+      actionError = "Too many Cider actions are already queued"
+      return false
+    }
+    applyOptimisticAction(name, value)
     next.push({ name: name, value: value })
     _actions = next
     startNextAction()
@@ -196,14 +218,16 @@ Item {
     _actions = next
     _actionOutput = ""
     _actionErrorOutput = ""
+    _actionFailure = ""
     actionProcess.command = Model.actionCommand(helperPath, _currentAction)
+    actionWatchdog.restart()
     actionProcess.running = true
   }
 
   function finishAction(raw) {
     var action = _currentAction
     _currentAction = null
-    var result = Model.parseResponse(raw)
+    var result = Model.parseActionResponse(raw)
     actionError = result.ok ? "" : Model.friendlyError(result)
     if (!result.ok) lastError = actionError
     refreshSoon.restart()
@@ -211,6 +235,108 @@ Item {
     else if (action && ["next", "previous", "skipTo"].indexOf(action.name) !== -1) queueSoon.restart()
     Qt.callLater(root.startNextAction)
   }
+
+  function helperProcess(kind) {
+    if (kind === "status") return statusProcess
+    if (kind === "queue") return queueProcess
+    return actionProcess
+  }
+
+  function helperWatchdog(kind) {
+    if (kind === "status") return statusWatchdog
+    if (kind === "queue") return queueWatchdog
+    return actionWatchdog
+  }
+
+  function helperKillTimer(kind) {
+    if (kind === "status") return statusKillTimer
+    if (kind === "queue") return queueKillTimer
+    return actionKillTimer
+  }
+
+  function helperOutput(kind, isError) {
+    if (kind === "status") return isError ? _statusError : _statusOutput
+    if (kind === "queue") return isError ? _queueError : _queueOutput
+    return isError ? _actionErrorOutput : _actionOutput
+  }
+
+  function setHelperOutput(kind, isError, value) {
+    if (kind === "status") {
+      if (isError) _statusError = value
+      else _statusOutput = value
+    } else if (kind === "queue") {
+      if (isError) _queueError = value
+      else _queueOutput = value
+    } else {
+      if (isError) _actionErrorOutput = value
+      else _actionOutput = value
+    }
+  }
+
+  function helperFailure(kind) {
+    if (kind === "status") return _statusFailure
+    if (kind === "queue") return _queueFailure
+    return _actionFailure
+  }
+
+  function setHelperFailure(kind, value) {
+    if (kind === "status") _statusFailure = value
+    else if (kind === "queue") _queueFailure = value
+    else _actionFailure = value
+  }
+
+  function appendHelperOutput(kind, isError, data) {
+    if (helperFailure(kind) !== "") return
+    var current = helperOutput(kind, isError)
+    var limit = isError ? helperErrorLimit : helperOutputLimit
+    var chunk = String(data || "")
+    var room = Math.max(0, limit - current.length)
+    if (chunk.length <= room) {
+      setHelperOutput(kind, isError, current + chunk)
+      return
+    }
+    setHelperOutput(kind, isError, current + chunk.substring(0, room))
+    abortHelper(kind, "Cider " + kind + " helper exceeded its output limit")
+  }
+
+  function abortHelper(kind, message) {
+    if (helperFailure(kind) !== "") return
+    setHelperFailure(kind, message)
+    helperWatchdog(kind).stop()
+    var process = helperProcess(kind)
+    if (process.running) {
+      process.signal(15)
+      helperKillTimer(kind).restart()
+    }
+  }
+
+  function helperExited(kind, fallback) {
+    helperWatchdog(kind).stop()
+    helperKillTimer(kind).stop()
+    var failure = helperFailure(kind)
+    var raw = helperOutput(kind, false)
+    if (failure !== "") {
+      raw = JSON.stringify({ ok: false, error: { code: "deadline_exceeded", message: failure } })
+    } else if (raw === "") {
+      raw = JSON.stringify({
+        ok: false,
+        error: { code: "request_failed", message: helperOutput(kind, true) || fallback }
+      })
+    }
+    if (kind === "status") applyStatus(raw)
+    else if (kind === "queue") applyQueue(raw)
+    else finishAction(raw)
+  }
+
+  function terminateAllHelpers() {
+    var kinds = ["status", "queue", "action"]
+    for (var index = 0; index < kinds.length; index++) {
+      var process = helperProcess(kinds[index])
+      if (process.running) process.signal(15)
+    }
+  }
+
+  Component.onDestruction: terminateAllHelpers()
 
   Timer {
     id: statusTimer
@@ -242,27 +368,62 @@ Item {
     onTriggered: root.refreshQueue()
   }
 
+  Timer {
+    id: statusWatchdog
+    interval: root.helperTimeoutMs
+    repeat: false
+    onTriggered: root.abortHelper("status", "Cider status helper timed out")
+  }
+
+  Timer {
+    id: queueWatchdog
+    interval: root.helperTimeoutMs
+    repeat: false
+    onTriggered: root.abortHelper("queue", "Cider queue helper timed out")
+  }
+
+  Timer {
+    id: actionWatchdog
+    interval: root.helperTimeoutMs
+    repeat: false
+    onTriggered: root.abortHelper("action", "Cider action helper timed out")
+  }
+
+  Timer {
+    id: statusKillTimer
+    interval: root.helperKillGraceMs
+    repeat: false
+    onTriggered: if (statusProcess.running) statusProcess.signal(9)
+  }
+
+  Timer {
+    id: queueKillTimer
+    interval: root.helperKillGraceMs
+    repeat: false
+    onTriggered: if (queueProcess.running) queueProcess.signal(9)
+  }
+
+  Timer {
+    id: actionKillTimer
+    interval: root.helperKillGraceMs
+    repeat: false
+    onTriggered: if (actionProcess.running) actionProcess.signal(9)
+  }
+
   Process {
     id: statusProcess
     running: false
     command: []
-    stdout: StdioCollector {
-      id: statusStdout
-      waitForEnd: true
-      onStreamFinished: root._statusOutput = text
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(data) { root.appendHelperOutput("status", false, data) }
     }
-    stderr: StdioCollector {
-      id: statusStderr
-      waitForEnd: true
-      onStreamFinished: root._statusError = text
+    stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(data) { root.appendHelperOutput("status", true, data) }
     }
     onExited: function(exitCode) {
-      var raw = String(statusStdout.text || root._statusOutput || "")
-      if (raw === "") raw = JSON.stringify({
-        ok: false,
-        error: { code: "request_failed", message: String(statusStderr.text || root._statusError || "Cider status failed") }
-      })
-      root.applyStatus(raw)
+      root.helperExited("status", "Cider status failed")
     }
   }
 
@@ -270,23 +431,16 @@ Item {
     id: queueProcess
     running: false
     command: []
-    stdout: StdioCollector {
-      id: queueStdout
-      waitForEnd: true
-      onStreamFinished: root._queueOutput = text
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(data) { root.appendHelperOutput("queue", false, data) }
     }
-    stderr: StdioCollector {
-      id: queueStderr
-      waitForEnd: true
-      onStreamFinished: root._queueError = text
+    stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(data) { root.appendHelperOutput("queue", true, data) }
     }
     onExited: function(exitCode) {
-      var raw = String(queueStdout.text || root._queueOutput || "")
-      if (raw === "") raw = JSON.stringify({
-        ok: false,
-        error: { code: "request_failed", message: String(queueStderr.text || root._queueError || "Cider queue failed") }
-      })
-      root.applyQueue(raw)
+      root.helperExited("queue", "Cider queue failed")
     }
   }
 
@@ -294,23 +448,16 @@ Item {
     id: actionProcess
     running: false
     command: []
-    stdout: StdioCollector {
-      id: actionStdout
-      waitForEnd: true
-      onStreamFinished: root._actionOutput = text
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(data) { root.appendHelperOutput("action", false, data) }
     }
-    stderr: StdioCollector {
-      id: actionStderr
-      waitForEnd: true
-      onStreamFinished: root._actionErrorOutput = text
+    stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(data) { root.appendHelperOutput("action", true, data) }
     }
     onExited: function(exitCode) {
-      var raw = String(actionStdout.text || root._actionOutput || "")
-      if (raw === "") raw = JSON.stringify({
-        ok: false,
-        error: { code: "request_failed", message: String(actionStderr.text || root._actionErrorOutput || "Cider action failed") }
-      })
-      root.finishAction(raw)
+      root.helperExited("action", "Cider action failed")
     }
   }
 }

@@ -21,6 +21,7 @@ An Omarchy widget for controlling [Cider](https://cider.sh/) and Apple Music pla
 - Cider with RPC enabled under `Settings > Connectivity > Manage External Application Access`
 - A Cider API token stored in the desktop login keyring
 - `secret-tool` from the `libsecret` package
+- ImageMagick 7 (`magick`) for bounded album-art decoding
 - Python 3.10 or newer
 
 The current release is tested with Omarchy 4.0.1 and Cider 4.0.9.1.
@@ -113,9 +114,11 @@ If the panel says the key is not configured, run `~/.config/omarchy/plugins/zpl.
 
 ## Privacy and security
 
-- The Python helper sends `CIDER_API_KEY` only in Cider's `apptoken` header. It accepts HTTP loopback hosts only and disables proxy use for RPC requests.
+- The Python helper sends `CIDER_API_KEY` only in Cider's `apptoken` header. It accepts HTTP loopback hosts only, disables proxy use, and rejects every RPC redirect instead of forwarding the token.
 - The token is read from the plugin process, the systemd user service environment, or the desktop login keyring, in that order. The plugin does not pass it as a command argument, print it, or write it to a plaintext file.
-- Album art is loaded from URLs returned by Cider, normally Apple's image CDN. The API token is not attached to those image requests.
+- Album art is accepted only from HTTPS subdomains of Apple's `mzstatic.com` image CDN. The helper rejects credentials, non-public destinations, redirects, files over 1 MiB, and images over 4096 pixels or 16 megapixels. It decodes accepted JPEG or PNG input with ImageMagick resource limits and gives QML only a local PNG of at most 320 pixels and 512 KiB.
+- Helper commands have an eight-second monotonic deadline. Python child commands run in separate process groups with capped output and forced cleanup. The QML service also caps streamed output and terminates timed-out helpers, escalating from `SIGTERM` to `SIGKILL` after 750 ms.
+- The private artwork cache is stored under `$XDG_CACHE_HOME/omarchy-cider-widget/artwork`, or `~/.cache` when `XDG_CACHE_HOME` is unset. It keeps at most 128 generated thumbnails.
 
 ## Development
 
