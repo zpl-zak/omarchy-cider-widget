@@ -31,6 +31,10 @@ Item {
 
   property var _actions: []
   property var _currentAction: null
+  property int _statusGeneration: 0
+  property int _statusRequestGeneration: 0
+  property bool _volumeSyncPending: false
+  property int _volumeConfirmAfterStatusGeneration: 0
   property string _statusOutput: ""
   property string _statusError: ""
   property string _queueOutput: ""
@@ -95,6 +99,8 @@ Item {
     _statusOutput = ""
     _statusError = ""
     _statusFailure = ""
+    _statusGeneration += 1
+    _statusRequestGeneration = _statusGeneration
     statusProcess.command = ["python3", helperPath, "status"]
     statusWatchdog.restart()
     statusProcess.running = true
@@ -118,7 +124,15 @@ Item {
     connected = data.connected === true
     playing = data.playing === true
     track = data.track || null
-    volume = Model.numberInRange(data.volume, 0, 0, 1)
+    var reportedVolume = Model.numberInRange(data.volume, 0, 0, 1)
+    if (!_volumeSyncPending) {
+      volume = reportedVolume
+    } else if (_volumeConfirmAfterStatusGeneration > 0
+               && _statusRequestGeneration >= _volumeConfirmAfterStatusGeneration) {
+      volume = reportedVolume
+      _volumeSyncPending = false
+      _volumeConfirmAfterStatusGeneration = 0
+    }
     shuffleMode = Math.round(Model.numberInRange(data.shuffleMode, 0, 0, 1))
     repeatMode = Math.round(Model.numberInRange(data.repeatMode, 0, 0, 2))
     autoplay = data.autoplay === true
@@ -181,7 +195,11 @@ Item {
     if (name === "playPause") playing = !playing
     else if (name === "play") playing = true
     else if (name === "pause") playing = false
-    else if (name === "volume") volume = Model.numberInRange(value, volume, 0, 1)
+    else if (name === "volume") {
+      volume = Model.numberInRange(value, volume, 0, 1)
+      _volumeSyncPending = true
+      _volumeConfirmAfterStatusGeneration = 0
+    }
     else if (name === "seek" && track) {
       track = Model.trackWithPosition(track, value)
       fetchedAtMs = Date.now()
@@ -228,12 +246,27 @@ Item {
     var action = _currentAction
     _currentAction = null
     var result = Model.parseActionResponse(raw)
+    if (action && action.name === "volume") {
+      if (!result.ok && !hasQueuedAction("volume")) {
+        _volumeSyncPending = false
+        _volumeConfirmAfterStatusGeneration = 0
+      } else if (result.ok && !hasQueuedAction("volume")) {
+        _volumeConfirmAfterStatusGeneration = _statusGeneration + 1
+      }
+    }
     actionError = result.ok ? "" : Model.friendlyError(result)
     if (!result.ok) lastError = actionError
     refreshSoon.restart()
     if (action && (action.name === "queueMove" || action.name === "queueRemove")) refreshQueue()
     else if (action && ["next", "previous", "skipTo"].indexOf(action.name) !== -1) queueSoon.restart()
     Qt.callLater(root.startNextAction)
+  }
+
+  function hasQueuedAction(name) {
+    for (var index = 0; index < _actions.length; index++) {
+      if (_actions[index].name === name) return true
+    }
+    return false
   }
 
   function helperProcess(kind) {

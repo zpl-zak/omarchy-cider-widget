@@ -43,7 +43,8 @@ TestCase {
 
   function envelope(data) { return JSON.stringify({ ok: true, data: data }) }
 
-  function connectedStatus() {
+  function connectedStatus(volume) {
+    var reportedVolume = volume === undefined ? 0.8 : volume
     return envelope({
       connected: true,
       playing: true,
@@ -60,7 +61,7 @@ TestCase {
         inFavorites: false,
         audioTraits: ["lossless"]
       },
-      volume: 0.8,
+      volume: reportedVolume,
       shuffleMode: 1,
       repeatMode: 0,
       autoplay: true,
@@ -119,6 +120,44 @@ TestCase {
     actionProcess().complete(0, envelope({ action: "volume" }), "")
     wait(220)
     verify(statusProcess().running)
+  }
+
+  function test_volume_does_not_revert_while_stale_status_catches_up() {
+    connectService()
+    service.refresh()
+    verify(statusProcess().running)
+
+    verify(service.runAction("volume", 0.35))
+    compare(service.volume, 0.35)
+
+    statusProcess().complete(0, connectedStatus(0.8), "")
+    compare(service.volume, 0.35)
+
+    actionProcess().complete(0, envelope({ action: "volume" }), "")
+    compare(service._volumeSyncPending, true)
+    wait(220)
+    verify(statusProcess().running)
+
+    statusProcess().complete(0, connectedStatus(0.35), "")
+    compare(service.volume, 0.35)
+    compare(service._volumeSyncPending, false)
+  }
+
+  function test_failed_volume_action_accepts_next_server_value() {
+    connectService()
+    verify(service.runAction("volume", 0.35))
+    compare(service.volume, 0.35)
+
+    actionProcess().complete(1, JSON.stringify({
+      ok: false,
+      error: { code: "request_failed", message: "Volume update failed" }
+    }), "")
+    compare(service._volumeSyncPending, false)
+    wait(220)
+    verify(statusProcess().running)
+
+    statusProcess().complete(0, connectedStatus(0.8), "")
+    compare(service.volume, 0.8)
   }
 
   function test_queue_action_uses_absolute_indices_and_refreshes_queue() {
