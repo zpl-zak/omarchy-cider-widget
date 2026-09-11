@@ -3,6 +3,7 @@ import QtTest
 import Quickshell
 import Quickshell.Io
 import "../.."
+import "../../Model.js" as Model
 
 TestCase {
   name: "CiderService"
@@ -59,7 +60,8 @@ TestCase {
         positionSec: 50,
         inLibrary: false,
         inFavorites: false,
-        audioTraits: ["lossless"]
+        audioTraits: ["lossless"],
+        flavor: "256"
       },
       volume: reportedVolume,
       shuffleMode: 1,
@@ -79,6 +81,7 @@ TestCase {
     connectService()
     compare(service.playing, true)
     compare(service.track.title, "Ego Brain")
+    compare(Model.audioBadge(service.track), "AAC 256 kbps")
     compare(service.volume, 0.8)
     compare(service.shuffleMode, 1)
     compare(service.autoplay, true)

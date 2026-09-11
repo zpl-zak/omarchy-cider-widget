@@ -684,6 +684,7 @@ def normalize_track(info: Any) -> dict[str, Any] | None:
         "inLibrary": info.get("inLibrary") is True,
         "inFavorites": info.get("inFavorites") is True,
         "audioTraits": traits,
+        "flavor": bounded_string(info.get("flavor"), 32),
     }
 
 

@@ -6,7 +6,7 @@ An Omarchy widget for controlling [Cider](https://cider.sh/) and Apple Music pla
 
 ## What it does
 
-- Shows album art, song, artist, album, playback state, and audio quality.
+- Shows album art, song, artist, album, playback state, and audio quality from Cider's current playback flavor (AAC or Atmos). Catalog availability is never used as playback quality; missing or unknown flavors leave the badge hidden.
 - Plays, pauses, skips forward, and goes back.
 - Seeks within the current song.
 - Sets Cider's own playback volume.

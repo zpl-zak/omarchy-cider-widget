@@ -99,11 +99,19 @@ class CiderRpcTests(unittest.TestCase):
                 "playParams": {"id": "123", "kind": "song"},
                 "artwork": {"url": "https://is1-ssl.mzstatic.com/image/{w}x{h}.jpg"},
                 "audioTraits": ["lossless"],
+                "flavor": "256",
             })
         self.assertEqual(track["id"], "123")
         self.assertEqual(track["title"], "Ego Brain")
+        self.assertEqual(track["flavor"], "256")
         self.assertAlmostEqual(track["durationSec"], 201.907)
         self.assertEqual(track["artPath"], "/cache/safe.png")
+
+    def test_playback_flavor_is_bounded_and_never_inferred_from_catalog(self):
+        for flavor, expected in [(None, ""), ({}, ""), ("x" * 100, "x" * 32)]:
+            track = RPC.normalize_track({"audioTraits": ["lossless"], "flavor": flavor})
+            self.assertEqual(track["flavor"], expected)
+        self.assertEqual(RPC.normalize_track({"audioTraits": ["lossless"]})["flavor"], "")
 
     def test_normalized_schema_caps_strings_arrays_and_numbers(self):
         with mock.patch.object(RPC, "materialize_artwork", return_value=""):

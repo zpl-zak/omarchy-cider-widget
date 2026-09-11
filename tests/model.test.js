@@ -42,7 +42,8 @@ test("validates and bounds status fields before exposing them", () => {
         positionSec: 500,
         inLibrary: false,
         inFavorites: true,
-        audioTraits: Array(20).fill("lossless")
+        audioTraits: Array(20).fill("lossless"),
+        flavor: "256"
       },
       volume: 5,
       shuffleMode: 8,
@@ -56,6 +57,7 @@ test("validates and bounds status fields before exposing them", () => {
   assert.equal(result.data.track.id.length, 256)
   assert.equal(result.data.track.title.length, 512)
   assert.equal(result.data.track.audioTraits.length, 8)
+  assert.equal(Model.audioBadge(result.data.track), "AAC 256 kbps")
   assert.equal(result.data.track.positionSec, 100)
   assert.equal(result.data.track.artSource, "file://" + safePath)
   assert.equal(result.data.volume, 1)
@@ -107,9 +109,21 @@ test("formats playback values", () => {
   assert.equal(Model.volumeIcon(0.8), "󰕾")
 })
 
-test("detects audio quality and builds queue metadata", () => {
-  assert.equal(Model.audioBadge({ audioTraits: ["lossless", "atmos"] }), "DOLBY ATMOS")
-  assert.equal(Model.audioBadge({ audioTraits: ["lossless"] }), "LOSSLESS")
+test("uses playback flavor even when catalog advertises lossless and Atmos", () => {
+  const audioTraits = ["lossless", "atmos", "spatial"]
+  for (const [flavor, badge] of [
+    ["256", "AAC 256 kbps"], ["64", "AAC 64 kbps"],
+    ["atmos", "DOLBY ATMOS"]
+  ]) {
+    assert.equal(Model.audioBadge({ audioTraits, flavor }), badge)
+  }
+  for (const flavor of [undefined, null, "", "unk", "future_lossless", "bin_64", "bin_256", "local_lossless", {}, 256]) {
+    assert.equal(Model.audioBadge({ audioTraits, flavor }), "")
+  }
+  assert.equal(Model.audioBadge(null), "")
+})
+
+test("builds queue metadata", () => {
   assert.equal(Model.queueMeta({ title: "Track", artist: "Artist", album: "Album" }), "Artist · Album")
 })
 

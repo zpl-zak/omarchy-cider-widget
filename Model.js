@@ -102,7 +102,8 @@ function sanitizeTrack(value, cacheRoot) {
     positionSec: finiteNumber(value.positionSec, 0, 0, 86400),
     inLibrary: value.inLibrary === true,
     inFavorites: value.inFavorites === true,
-    audioTraits: sanitizeTraits(value.audioTraits)
+    audioTraits: sanitizeTraits(value.audioTraits),
+    flavor: stringField(value.flavor, typeStringLimit)
   }
 }
 
@@ -218,9 +219,12 @@ function volumeIcon(volume) {
 }
 
 function audioBadge(track) {
-  var traits = track && Array.isArray(track.audioTraits) ? track.audioTraits : []
-  if (traits.indexOf("atmos") !== -1 || traits.indexOf("spatial") !== -1) return "DOLBY ATMOS"
-  if (traits.indexOf("lossless") !== -1) return "LOSSLESS"
+  // Catalog audioTraits describe availability, not the stream Cider is playing.
+  // Match the playback flavors reported by Cider's now-playing RPC response.
+  var flavor = track && typeof track.flavor === "string" ? track.flavor : ""
+  if (flavor === "64") return "AAC 64 kbps"
+  if (flavor === "256") return "AAC 256 kbps"
+  if (flavor === "atmos") return "DOLBY ATMOS"
   return ""
 }
 

@@ -156,6 +156,7 @@ Panel {
         playing: root.service.playing,
         title: root.title,
         artist: root.artist,
+        audioBadge: Model.audioBadge(root.service.track),
         volume: root.service.volume,
         shuffleMode: root.service.shuffleMode,
         repeatMode: root.service.repeatMode,
