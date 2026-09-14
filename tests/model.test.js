@@ -137,15 +137,15 @@ test("updates track position without mutating the source", () => {
 test("builds only allowlisted helper action commands", () => {
   assert.deepEqual(
     Model.actionCommand("/plugin/cider-rpc.py", { name: "volume", value: 0.65 }),
-    ["python3", "/plugin/cider-rpc.py", "action", "volume", "0.65"]
+    ["/usr/bin/python3", "-I", "-S", "/plugin/cider-rpc.py", "action", "volume", "0.65"]
   )
   assert.deepEqual(
     Model.actionCommand("/plugin/cider-rpc.py", { name: "queueMove", value: [4, 3] }),
-    ["python3", "/plugin/cider-rpc.py", "action", "queueMove", "4", "3"]
+    ["/usr/bin/python3", "-I", "-S", "/plugin/cider-rpc.py", "action", "queueMove", "4", "3"]
   )
   assert.deepEqual(
     Model.actionCommand("/plugin/cider-rpc.py", { name: "skipTo", value: 2 }),
-    ["python3", "/plugin/cider-rpc.py", "action", "skipTo", "2"]
+    ["/usr/bin/python3", "-I", "-S", "/plugin/cider-rpc.py", "action", "skipTo", "2"]
   )
   assert.deepEqual(Model.actionCommand("/plugin/cider-rpc.py", { name: "deleteEverything" }), [])
 })

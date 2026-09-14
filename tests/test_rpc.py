@@ -22,6 +22,47 @@ SPEC.loader.exec_module(RPC)
 
 
 class CiderRpcTests(unittest.TestCase):
+    def test_python_startup_ignores_hostile_path_and_python_hooks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            marker = root / "executed"
+            hook = f"from pathlib import Path; Path({str(marker)!r}).touch()\n"
+            (root / "sitecustomize.py").write_text(hook)
+            (root / "usercustomize.py").write_text(hook)
+            (root / "json.py").write_text(hook + "raise RuntimeError('shadowed json')\n")
+            fake = root / "python3"
+            fake.write_text(f"#!/bin/sh\n: > '{marker}'\nexit 99\n")
+            fake.chmod(0o700)
+            result = subprocess.run(
+                ["/usr/bin/python3", "-I", "-S", str(ROOT / "cider-rpc.py"), "invalid"],
+                env={"PATH": temporary, "PYTHONPATH": temporary, "PYTHONHOME": temporary,
+                     "PYTHONUSERBASE": temporary, "PYTHONSTARTUP": str(root / "sitecustomize.py")},
+                cwd=temporary, capture_output=True, timeout=3,
+            )
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["error"]["code"], "invalid_command")
+            self.assertFalse(marker.exists())
+
+    def test_credential_children_use_absolute_paths_and_session_only_environment(self):
+        hostile = {
+            "PATH": "/attacker", "PYTHONPATH": "/attacker", "LD_PRELOAD": "/attacker.so",
+            "GIO_EXTRA_MODULES": "/attacker", "SYSTEMD_PAGER": "/attacker/pager",
+            "UNRELATED_SECRET": "do-not-forward", "HOME": "/attacker",
+            "XDG_RUNTIME_DIR": "/run/user/1000", "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+        }
+        expected = {"PATH": "/usr/bin", "LC_ALL": "C", "XDG_RUNTIME_DIR": "/run/user/1000",
+                    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+        responses = [subprocess.CompletedProcess([], 0, b"OTHER=1\n", b""),
+                     subprocess.CompletedProcess([], 0, b"test-token\n", b"")]
+        with mock.patch.dict(os.environ, hostile, clear=True), mock.patch.object(
+            RPC, "run_bounded_command", side_effect=responses
+        ) as run:
+            self.assertEqual(RPC.api_key(), "test-token")
+        self.assertEqual([call.args[0][0] for call in run.call_args_list],
+                         ["/usr/bin/systemctl", "/usr/bin/secret-tool"])
+        for call in run.call_args_list:
+            self.assertEqual(call.kwargs["env"], expected)
+
     def test_rpc_url_is_limited_to_loopback(self):
         with mock.patch.dict(os.environ, {"CIDER_RPC_URL": "http://localhost:10767"}, clear=False):
             self.assertEqual(RPC.rpc_base_url(), "http://localhost:10767")
@@ -84,6 +125,7 @@ class CiderRpcTests(unittest.TestCase):
                 [sys.executable, "-c", "import os; os.write(1, b'x' * 8192)"],
                 timeout=2,
                 stdout_limit=64,
+                env={},
             )
         self.assertEqual(context.exception.code, "output_too_large")
         self.assertEqual(RPC._active_children, [])
@@ -145,7 +187,7 @@ class CiderRpcTests(unittest.TestCase):
         self.assertEqual(dimensions, (5000, 5000))
         self.assertFalse(RPC.valid_dimensions(dimensions, RPC.MAX_ARTWORK_DIMENSION))
 
-    @unittest.skipUnless(RPC.shutil.which("magick"), "ImageMagick is not installed")
+    @unittest.skipUnless(os.access(RPC.IMAGEMAGICK, os.X_OK), "ImageMagick is not installed")
     def test_artwork_is_materialized_as_bounded_local_png(self):
         png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -154,7 +196,14 @@ class CiderRpcTests(unittest.TestCase):
             RPC,
             "download_artwork",
             return_value=(png, "image/png"),
-        ):
+        ), mock.patch.dict(os.environ, {
+            "PATH": temporary, "CIDER_API_KEY": "test-secret", "UNRELATED_SECRET": "another-secret",
+            "LD_PRELOAD": "/attacker.so", "MAGICK_CONFIGURE_PATH": temporary,
+            "MAGICK_CODER_MODULE_PATH": temporary, "HOME": temporary, "XDG_CONFIG_HOME": temporary,
+        }), mock.patch.object(RPC, "run_bounded_command", wraps=RPC.run_bounded_command) as run:
+            fake_magick = Path(temporary) / "magick"
+            fake_magick.write_text("#!/bin/sh\nexit 99\n")
+            fake_magick.chmod(0o700)
             path = RPC.materialize_artwork(
                 {"url": "https://is1-ssl.mzstatic.com/image/{w}x{h}.png"},
                 cache_root=Path(temporary),
@@ -162,6 +211,27 @@ class CiderRpcTests(unittest.TestCase):
             self.assertTrue(path.endswith(".png"))
             self.assertNotIn("mzstatic.com", path)
             self.assertTrue(RPC.cached_png_is_safe(Path(path), 320))
+            self.assertEqual(run.call_args.args[0][0], "/usr/bin/magick")
+            self.assertEqual(run.call_args.kwargs["env"], {
+                "PATH": "/usr/bin", "LC_ALL": "C", "HOME": "/nonexistent", "XDG_CONFIG_HOME": "/nonexistent",
+            })
+
+    def test_missing_approved_magick_does_not_fall_back_to_path(self):
+        png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "executed"
+            fake = Path(temporary) / "magick"
+            fake.write_text(f"#!/bin/sh\n: > '{marker}'\n")
+            fake.chmod(0o700)
+            with mock.patch.dict(os.environ, {"PATH": temporary}), mock.patch.object(
+                RPC, "IMAGEMAGICK", str(Path(temporary) / "missing")
+            ), mock.patch.object(RPC, "download_artwork", return_value=(png, "image/png")):
+                self.assertEqual(RPC.materialize_artwork(
+                    {"url": "https://is1-ssl.mzstatic.com/image.png"}, cache_root=Path(temporary)
+                ), "")
+            self.assertFalse(marker.exists())
 
     def test_serialized_output_has_a_hard_byte_cap(self):
         stream = io.BytesIO()
@@ -270,9 +340,10 @@ class CiderRpcTests(unittest.TestCase):
         ) as run_mock:
             self.assertEqual(RPC.api_key(), "manager-secret")
         run_mock.assert_called_once_with(
-            ["systemctl", "--user", "show-environment"],
+            ["/usr/bin/systemctl", "--user", "show-environment"],
             timeout=2.0,
             stdout_limit=RPC.MAX_MANAGER_OUTPUT_BYTES,
+            env={"PATH": "/usr/bin", "LC_ALL": "C"},
         )
 
     def test_reads_key_from_login_keyring_after_environment_sources(self):
@@ -283,9 +354,10 @@ class CiderRpcTests(unittest.TestCase):
         ) as run_mock:
             self.assertEqual(RPC.api_key(), "keyring-secret")
         self.assertEqual(run_mock.call_args_list[1], mock.call(
-            ["secret-tool", "lookup", *RPC.KEYRING_ATTRIBUTES],
+            ["/usr/bin/secret-tool", "lookup", *RPC.KEYRING_ATTRIBUTES],
             timeout=2.0,
             stdout_limit=RPC.MAX_TOKEN_BYTES + 1,
+            env={"PATH": "/usr/bin", "LC_ALL": "C"},
         ))
 
 

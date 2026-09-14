@@ -47,6 +47,18 @@ Item {
 
   readonly property string helperPath: decodeURIComponent(
     Qt.resolvedUrl("cider-rpc.py").toString().replace(/^file:\/\//, ""))
+  // With clearEnvironment, null copies only this named variable if present.
+  // No Python startup, dynamic loader, module, or session PATH overrides.
+  readonly property var helperEnvironment: ({
+    PATH: "/usr/bin",
+    LC_ALL: "C",
+    HOME: null,
+    XDG_CACHE_HOME: null,
+    XDG_RUNTIME_DIR: null,
+    DBUS_SESSION_BUS_ADDRESS: null,
+    CIDER_API_KEY: null,
+    CIDER_RPC_URL: null
+  })
   readonly property string artworkCacheRoot: {
     var configured = String(Quickshell.env("XDG_CACHE_HOME") || "")
     var home = String(Quickshell.env("HOME") || "")
@@ -101,7 +113,7 @@ Item {
     _statusFailure = ""
     _statusGeneration += 1
     _statusRequestGeneration = _statusGeneration
-    statusProcess.command = ["python3", helperPath, "status"]
+    statusProcess.command = Model.helperCommand(helperPath, ["status"])
     statusWatchdog.restart()
     statusProcess.running = true
   }
@@ -158,7 +170,7 @@ Item {
     _queueOutput = ""
     _queueError = ""
     _queueFailure = ""
-    queueProcess.command = ["python3", helperPath, "queue", String(queueLimit)]
+    queueProcess.command = Model.helperCommand(helperPath, ["queue", String(queueLimit)])
     queueWatchdog.restart()
     queueProcess.running = true
   }
@@ -445,6 +457,8 @@ Item {
 
   Process {
     id: statusProcess
+    clearEnvironment: true
+    environment: root.helperEnvironment
     running: false
     command: []
     stdout: SplitParser {
@@ -462,6 +476,8 @@ Item {
 
   Process {
     id: queueProcess
+    clearEnvironment: true
+    environment: root.helperEnvironment
     running: false
     command: []
     stdout: SplitParser {
@@ -479,6 +495,8 @@ Item {
 
   Process {
     id: actionProcess
+    clearEnvironment: true
+    environment: root.helperEnvironment
     running: false
     command: []
     stdout: SplitParser {

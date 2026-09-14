@@ -5,6 +5,8 @@ QtObject {
 
   property bool running: false
   property var command: []
+  property bool clearEnvironment: false
+  property var environment: ({})
   property var stdout: null
   property var stderr: null
   property bool _completing: false

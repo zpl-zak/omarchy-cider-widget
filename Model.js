@@ -244,9 +244,14 @@ function validAction(name) {
   ].indexOf(String(name || "")) !== -1
 }
 
+function helperCommand(helperPath, args) {
+  // Omarchy uses distribution executables, never session PATH or Python hooks.
+  return ["/usr/bin/python3", "-I", "-S", String(helperPath || "")].concat(args)
+}
+
 function actionCommand(helperPath, action) {
   if (!action || !validAction(action.name)) return []
-  var command = ["python3", String(helperPath || ""), "action", String(action.name)]
+  var command = helperCommand(helperPath, ["action", String(action.name)])
   var values = Array.isArray(action.value) ? action.value : [action.value]
   for (var index = 0; index < values.length && index < 2; index++) {
     var value = values[index]

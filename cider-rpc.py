@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -IS
 """Secret-safe, bounded adapter for Cider's localhost RPC API."""
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ import json
 import math
 import os
 import selectors
-import shutil
 import signal
 import socket
 import ssl
@@ -30,6 +29,10 @@ from typing import Any, Callable
 
 
 DEFAULT_RPC_URL = "http://127.0.0.1:10767"
+# Approved distribution paths. Missing programs fail closed; never search PATH.
+SYSTEMCTL = "/usr/bin/systemctl"
+SECRET_TOOL = "/usr/bin/secret-tool"
+IMAGEMAGICK = "/usr/bin/magick"
 PLAYBACK_PATH = "/api/v1/playback"
 REQUEST_TIMEOUT_SEC = 3.0
 HELPER_DEADLINE_SEC = 8.0
@@ -182,7 +185,7 @@ def run_bounded_command(
     timeout: float,
     stdout_limit: int,
     stderr_limit: int = MAX_STDERR_BYTES,
-    env: dict[str, str] | None = None,
+    env: dict[str, str],
 ) -> subprocess.CompletedProcess[bytes]:
     """Stream capped child output with a monotonic deadline and group cleanup."""
 
@@ -194,6 +197,7 @@ def run_bounded_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
+            cwd="/",
             start_new_session=True,
         )
     except OSError as error:
@@ -295,14 +299,25 @@ def rpc_base_url() -> str:
     return f"http://{netloc}"
 
 
+def credential_environment() -> dict[str, str]:
+    """Only the session bus coordinates needed by systemctl and Secret Service."""
+
+    environment = {"PATH": "/usr/bin", "LC_ALL": "C"}
+    for name in ("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"):
+        if value := os.environ.get(name):
+            environment[name] = value
+    return environment
+
+
 def api_key() -> str:
     value = validate_token(os.environ.get("CIDER_API_KEY", ""))
     if not value:
         try:
             completed = run_bounded_command(
-                ["systemctl", "--user", "show-environment"],
+                [SYSTEMCTL, "--user", "show-environment"],
                 timeout=2.0,
                 stdout_limit=MAX_MANAGER_OUTPUT_BYTES,
+                env=credential_environment(),
             )
         except ProcessFailure:
             completed = None
@@ -315,9 +330,10 @@ def api_key() -> str:
     if not value:
         try:
             completed = run_bounded_command(
-                ["secret-tool", "lookup", *KEYRING_ATTRIBUTES],
+                [SECRET_TOOL, "lookup", *KEYRING_ATTRIBUTES],
                 timeout=2.0,
                 stdout_limit=MAX_TOKEN_BYTES + 1,
+                env=credential_environment(),
             )
         except ProcessFailure:
             completed = None
@@ -598,14 +614,16 @@ def materialize_artwork(artwork: Any, size: int = 320, cache_root: Path | None =
         os.close(output_fd)
         output_path = Path(output_name)
 
-        magick = shutil.which("magick")
-        if not magick:
-            return ""
-        child_environment = dict(os.environ)
-        child_environment.pop("CIDER_API_KEY", None)
+        # No credentials, loader/coder overrides, or user configuration discovery.
+        child_environment = {
+            "PATH": "/usr/bin",
+            "LC_ALL": "C",
+            "HOME": "/nonexistent",
+            "XDG_CONFIG_HOME": "/nonexistent",
+        }
         completed = run_bounded_command(
             [
-                magick,
+                IMAGEMAGICK,
                 "-limit", "memory", "32MiB",
                 "-limit", "map", "64MiB",
                 "-limit", "disk", "0",

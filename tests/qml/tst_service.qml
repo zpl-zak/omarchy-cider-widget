@@ -32,8 +32,8 @@ TestCase {
   function processFor(command) {
     for (var i = ProcessRegistry.processes.length - 1; i >= 0; i--) {
       var process = ProcessRegistry.processes[i]
-      if (process.command.length > 2 && process.command[0] === "python3"
-          && process.command[2] === command) return process
+      if (process.command.length > 4 && process.command[0] === "/usr/bin/python3"
+          && process.command[4] === command) return process
     }
     return null
   }
@@ -75,6 +75,28 @@ TestCase {
     statusProcess().complete(0, connectedStatus(), "")
     compare(service.probed, true)
     compare(service.connected, true)
+  }
+
+  function test_all_helpers_have_isolated_launches() {
+    connectService()
+    service.refresh()
+    service.beginQueueWatch()
+    verify(service.runAction("pause"))
+    var processes = [statusProcess(), queueProcess(), actionProcess()]
+    for (var i = 0; i < processes.length; i++) {
+      var process = processes[i]
+      verify(process !== null)
+      compare(process.command.slice(0, 4), ["/usr/bin/python3", "-I", "-S", service.helperPath])
+      compare(process.clearEnvironment, true)
+      compare(Object.keys(process.environment).sort(), [
+        "CIDER_API_KEY", "CIDER_RPC_URL", "DBUS_SESSION_BUS_ADDRESS", "HOME",
+        "LC_ALL", "PATH", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"
+      ])
+      compare(process.environment.PATH, "/usr/bin")
+      compare(process.environment.LC_ALL, "C")
+      compare(process.environment.CIDER_API_KEY, null)
+      compare(process.environment.DBUS_SESSION_BUS_ADDRESS, null)
+    }
   }
 
   function test_connected_status_updates_playback() {
