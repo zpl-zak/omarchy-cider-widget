@@ -99,6 +99,22 @@ TestCase {
     }
   }
 
+  function test_set_rating_marks_the_current_track() {
+    connectService()
+    compare(service.track.rating, 0)
+    verify(service.runAction("setRating", 1))
+    compare(actionProcess().command.slice(-3), ["action", "setRating", "1"])
+    compare(service.track.rating, 1)
+    compare(service.track.inFavorites, true)
+    actionProcess().complete(0, envelope({ action: "setRating" }), "")
+    compare(service._ratingSyncPending, true)
+
+    service.refresh()
+    statusProcess().complete(0, connectedStatus(), "")
+    compare(service.track.rating, 1)
+    compare(service._ratingSyncPending, true)
+  }
+
   function test_connected_status_updates_playback() {
     connectService()
     compare(service.playing, true)

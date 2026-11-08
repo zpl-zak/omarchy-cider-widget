@@ -16,7 +16,7 @@
   },
   "barWidget": {
     "displayName": "Cider",
-    "description": "Now playing, transport controls, seek, volume, playback modes, and an editable Up Next queue for Cider.",
+    "description": "Now playing, transport controls, favorite, suggest less, seek, volume, playback modes, and an editable Up Next queue for Cider.",
     "category": "Media",
     "aliases": [
       "apple music",

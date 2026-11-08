@@ -283,10 +283,54 @@ class CiderRpcTests(unittest.TestCase):
 
         self.assertEqual(calls[0], ("POST", "/api/v1/playback/volume", {"volume": 0.65}))
         self.assertEqual(calls[1], ("POST", "/api/v1/playback/next", None))
+        RPC.action_payload("setRating", "1", request=fake_request)
+        RPC.action_payload("setRating", "-1", request=fake_request)
+        self.assertEqual(calls[2], ("POST", "/api/v1/playback/set-rating", {"rating": 1}))
+        self.assertEqual(calls[3], ("POST", "/api/v1/playback/set-rating", {"rating": -1}))
+        with self.assertRaises(RPC.RpcFailure):
+            RPC.action_payload("setRating", "2", request=fake_request)
         with self.assertRaises(RPC.RpcFailure):
             RPC.action_payload("clearQueue", None)
         with self.assertRaises(RPC.RpcFailure):
             RPC.action_payload("volume", "1.5", request=fake_request)
+
+    def test_status_reads_library_rating_without_failing_closed(self):
+        def playback(method, path, body=None):
+            if path.endswith("/now-playing"):
+                return {"info": {
+                    "name": "Song",
+                    "artistName": "Artist",
+                    "inFavorites": True,
+                    "playParams": {"id": "1", "kind": "song"},
+                }}
+            if path.endswith("/is-playing"):
+                return {"is_playing": True}
+            if path.endswith("/volume"):
+                return {"volume": 0.4}
+            if path.endswith("/shuffle-mode"):
+                return {"value": 0}
+            if path.endswith("/repeat-mode"):
+                return {"value": 0}
+            if path.endswith("/autoplay"):
+                return {"value": False}
+            if path.endswith("/library/now-playing/status"):
+                return {"data": {"inLibrary": True, "rating": -1}}
+            raise AssertionError(path)
+
+        with mock.patch.object(RPC, "materialize_artwork", return_value=""):
+            disliked = RPC.status_payload(playback)
+        self.assertEqual(disliked["track"]["rating"], -1)
+        self.assertFalse(disliked["track"]["inFavorites"])
+
+        def missing_scope(method, path, body=None):
+            if path.endswith("/library/now-playing/status"):
+                raise RPC.RpcFailure("unauthorized", "Token is missing a required scope")
+            return playback(method, path, body)
+
+        with mock.patch.object(RPC, "materialize_artwork", return_value=""):
+            loved = RPC.status_payload(missing_scope)
+        self.assertEqual(loved["track"]["rating"], 1)
+        self.assertTrue(loved["track"]["inFavorites"])
 
     def test_queue_actions_use_zero_based_playback_indices(self):
         calls = []

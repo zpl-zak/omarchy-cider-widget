@@ -88,9 +88,16 @@ function sanitizeTraits(value) {
   return traits
 }
 
+function trackRating(value) {
+  if (typeof value.rating === "number" && isFinite(value.rating))
+    return integerField(value.rating, 0, -1, 1)
+  return value.inFavorites === true ? 1 : 0
+}
+
 function sanitizeTrack(value, cacheRoot) {
   if (value === null) return null
   if (!isRecord(value)) return undefined
+  var rating = trackRating(value)
   return {
     id: stringField(value.id, idStringLimit),
     type: stringField(value.type, typeStringLimit) || "song",
@@ -101,7 +108,8 @@ function sanitizeTrack(value, cacheRoot) {
     durationSec: finiteNumber(value.durationSec, 0, 0, 86400),
     positionSec: finiteNumber(value.positionSec, 0, 0, 86400),
     inLibrary: value.inLibrary === true,
-    inFavorites: value.inFavorites === true,
+    inFavorites: rating === 1,
+    rating: rating,
     audioTraits: sanitizeTraits(value.audioTraits),
     flavor: stringField(value.flavor, typeStringLimit)
   }
@@ -194,6 +202,16 @@ function trackWithPosition(track, position) {
   return next
 }
 
+function trackWithRating(track, rating) {
+  var source = isRecord(track) ? track : {}
+  var next = {}
+  for (var key in source) next[key] = source[key]
+  var value = integerField(Number(rating), 0, -1, 1)
+  next.rating = value
+  next.inFavorites = value === 1
+  return next
+}
+
 function formatTime(value) {
   var seconds = Math.max(0, Math.min(86400, Math.floor(Number(value || 0))))
   var minutes = Math.floor(seconds / 60)
@@ -239,7 +257,7 @@ function queueMeta(item) {
 function validAction(name) {
   return [
     "play", "pause", "playPause", "next", "previous", "seek", "volume",
-    "toggleShuffle", "toggleRepeat", "toggleAutoplay", "queueMove",
+    "setRating", "toggleShuffle", "toggleRepeat", "toggleAutoplay", "queueMove",
     "queueRemove", "skipTo"
   ].indexOf(String(name || "")) !== -1
 }
@@ -272,6 +290,7 @@ if (typeof module !== "undefined") {
     friendlyError: friendlyError,
     numberInRange: numberInRange,
     trackWithPosition: trackWithPosition,
+    trackWithRating: trackWithRating,
     formatTime: formatTime,
     repeatLabel: repeatLabel,
     repeatIcon: repeatIcon,

@@ -35,6 +35,9 @@ Item {
   property int _statusRequestGeneration: 0
   property bool _volumeSyncPending: false
   property int _volumeConfirmAfterStatusGeneration: 0
+  property bool _ratingSyncPending: false
+  property int _ratingPendingValue: 0
+  property int _ratingConfirmAfterStatusGeneration: 0
   property string _statusOutput: ""
   property string _statusError: ""
   property string _queueOutput: ""
@@ -99,6 +102,9 @@ Item {
     track = null
     upNext = []
     fetchedAtMs = 0
+    _ratingSyncPending = false
+    _ratingPendingValue = 0
+    _ratingConfirmAfterStatusGeneration = 0
   }
 
   function refresh() {
@@ -135,7 +141,23 @@ Item {
     configured = true
     connected = data.connected === true
     playing = data.playing === true
-    track = data.track || null
+    var nextTrack = data.track || null
+    var sameTrack = nextTrack && track && String(nextTrack.id || "") !== ""
+      && String(nextTrack.id || "") === String(track.id || "")
+    var serverRating = nextTrack ? Math.round(Number(nextTrack.rating || 0)) : 0
+    var ratingConfirmed = _ratingConfirmAfterStatusGeneration > 0
+      && _statusRequestGeneration >= _ratingConfirmAfterStatusGeneration
+    var ratingGaveUp = ratingConfirmed
+      && _statusRequestGeneration >= _ratingConfirmAfterStatusGeneration + 1
+    if (_ratingSyncPending && sameTrack
+        && !(ratingGaveUp || (ratingConfirmed && serverRating === _ratingPendingValue))) {
+      nextTrack = Model.trackWithRating(nextTrack, _ratingPendingValue)
+    } else if (_ratingSyncPending) {
+      _ratingSyncPending = false
+      _ratingPendingValue = 0
+      _ratingConfirmAfterStatusGeneration = 0
+    }
+    track = nextTrack
     var reportedVolume = Model.numberInRange(data.volume, 0, 0, 1)
     if (!_volumeSyncPending) {
       volume = reportedVolume
@@ -215,6 +237,11 @@ Item {
     else if (name === "seek" && track) {
       track = Model.trackWithPosition(track, value)
       fetchedAtMs = Date.now()
+    } else if (name === "setRating" && track) {
+      track = Model.trackWithRating(track, value)
+      _ratingPendingValue = Math.round(Number(track.rating || 0))
+      _ratingSyncPending = true
+      _ratingConfirmAfterStatusGeneration = 0
     } else if (name === "toggleShuffle") shuffleMode = shuffleMode === 0 ? 1 : 0
     else if (name === "toggleRepeat") repeatMode = (repeatMode + 1) % 3
     else if (name === "toggleAutoplay") autoplay = !autoplay
@@ -264,6 +291,15 @@ Item {
         _volumeConfirmAfterStatusGeneration = 0
       } else if (result.ok && !hasQueuedAction("volume")) {
         _volumeConfirmAfterStatusGeneration = _statusGeneration + 1
+      }
+    }
+    if (action && action.name === "setRating") {
+      if (!result.ok && !hasQueuedAction("setRating")) {
+        _ratingSyncPending = false
+        _ratingPendingValue = 0
+        _ratingConfirmAfterStatusGeneration = 0
+      } else if (result.ok && !hasQueuedAction("setRating")) {
+        _ratingConfirmAfterStatusGeneration = _statusGeneration + 1
       }
     }
     actionError = result.ok ? "" : Model.friendlyError(result)
