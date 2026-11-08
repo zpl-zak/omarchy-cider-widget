@@ -8,6 +8,8 @@ An Omarchy widget for controlling [Cider](https://cider.sh/) and Apple Music pla
 
 - Shows album art, song, artist, album, playback state, and audio quality from Cider's current playback flavor (AAC or Atmos). Catalog availability is never used as playback quality; missing or unknown flavors leave the badge hidden.
 - Plays, pauses, skips forward, and goes back.
+- Favorites the current song, or clears that favorite.
+- Suggests the current song less often. Cider records that as a dislike and skips to the next song. Choosing it again while the song is still playing clears the dislike.
 - Seeks within the current song.
 - Sets Cider's own playback volume.
 - Toggles shuffle, repeat, and autoplay.
@@ -87,7 +89,7 @@ On the bar:
 - Right click refreshes playback state.
 - Mouse wheel moves backward or forward through tracks.
 
-Inside the panel, use the buttons and sliders directly. Click an Up Next track to advance to it, use the arrows to move it earlier or later, or use the remove button to drop it from the queue. Keyboard shortcuts are `P` for play or pause, `N` for next, `B` for previous, `S` for shuffle, `R` for repeat, `A` for autoplay, and `O` to open Cider.
+Inside the panel, use the buttons and sliders directly. Suggest less and favorite sit on the same row as play and pause. Click an Up Next track to advance to it, use the arrows to move it earlier or later, or use the remove button to drop it from the queue. Keyboard shortcuts are `P` for play or pause, `N` for next, `B` for previous, `L` for suggest less, `F` for favorite, `S` for shuffle, `R` for repeat, `A` for autoplay, and `O` to open Cider.
 
 The plugin settings expose the playback polling interval and the number of Up Next tracks. Playback defaults to a two-second refresh. The larger queue response is fetched only while the panel is open.
 
@@ -98,6 +100,8 @@ omarchy-shell zpl.cider status
 omarchy-shell zpl.cider playPause
 omarchy-shell zpl.cider next
 omarchy-shell zpl.cider previous
+omarchy-shell zpl.cider favorite
+omarchy-shell zpl.cider suggestLess
 omarchy-shell zpl.cider volume 0.65
 omarchy-shell zpl.cider seek 90
 omarchy-shell zpl.cider open

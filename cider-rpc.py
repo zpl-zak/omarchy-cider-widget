@@ -673,6 +673,45 @@ def item_id(item: Any) -> str:
     return ""
 
 
+def coerce_rating(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if not math.isfinite(number):
+        return None
+    return round(bounded_number(number, 0, -1, 1))
+
+
+def rating_from_info(info: dict[str, Any]) -> int:
+    explicit = coerce_rating(info.get("rating"))
+    if explicit is not None:
+        return explicit
+    return 1 if info.get("inFavorites") is True else 0
+
+
+def library_rating(request: Callable[..., Any]) -> int | None:
+    # v1 now-playing exposes inFavorites but not a dislike. Cider 4 reports the
+    # -1/0/1 rating on the scoped v2 library status route. A token without the
+    # library scope must not take the rest of playback status down with it.
+    try:
+        payload = request("GET", "/api/v2/library/now-playing/status")
+    except RpcFailure:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if not isinstance(data, dict):
+        return None
+    return coerce_rating(data.get("rating"))
+
+
+def safe_library_rating(request: Callable[..., Any]) -> int | None:
+    try:
+        return library_rating(request)
+    except Exception:
+        return None
+
+
 def normalize_track(info: Any) -> dict[str, Any] | None:
     if not isinstance(info, dict) or not info:
         return None
@@ -700,7 +739,8 @@ def normalize_track(info: Any) -> dict[str, Any] | None:
         "durationSec": duration,
         "positionSec": position,
         "inLibrary": info.get("inLibrary") is True,
-        "inFavorites": info.get("inFavorites") is True,
+        "inFavorites": rating_from_info(info) == 1,
+        "rating": rating_from_info(info),
         "audioTraits": traits,
         "flavor": bounded_string(info.get("flavor"), 32),
     }
@@ -740,10 +780,12 @@ def status_payload(request: Callable[..., Any] | None = None) -> dict[str, Any]:
         "autoplay": f"{PLAYBACK_PATH}/autoplay",
     }
     results: dict[str, Any] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(endpoints)) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(endpoints) + 1) as executor:
         futures = {name: executor.submit(request, "GET", path) for name, path in endpoints.items()}
+        rating_future = executor.submit(safe_library_rating, request)
         for name, future in futures.items():
             results[name] = future.result()
+        reported_rating = rating_future.result()
 
     now = results["now"] if isinstance(results["now"], dict) else {}
     playing = results["playing"] if isinstance(results["playing"], dict) else {}
@@ -752,11 +794,15 @@ def status_payload(request: Callable[..., Any] | None = None) -> dict[str, Any]:
     repeat = results["repeat"] if isinstance(results["repeat"], dict) else {}
     autoplay = results["autoplay"] if isinstance(results["autoplay"], dict) else {}
     info = now.get("info") if isinstance(now.get("info"), dict) else {}
+    track = normalize_track(info)
+    if track is not None and isinstance(reported_rating, int):
+        track["rating"] = reported_rating
+        track["inFavorites"] = reported_rating == 1
 
     return {
         "connected": True,
         "playing": playing.get("is_playing") is True,
-        "track": normalize_track(info),
+        "track": track,
         "volume": bounded_number(volume.get("volume"), 0, 0, 1),
         "shuffleMode": round(bounded_number(shuffle.get("value"), bounded_number(info.get("shuffleMode"), 0, 0, 1), 0, 1)),
         "repeatMode": round(bounded_number(repeat.get("value"), bounded_number(info.get("repeatMode"), 0, 0, 2), 0, 2)),
@@ -872,6 +918,9 @@ def action_payload(
     elif name == "queueRemove":
         index = integer_in_range(raw_value, "Queue index", 0, MAX_QUEUE_ITEMS - 1)
         suffix, body = "/queue/remove-by-index", {"index": index}
+    elif name == "setRating":
+        rating = integer_in_range(raw_value, "Rating", -1, 1)
+        suffix, body = "/set-rating", {"rating": rating}
     elif name == "skipTo":
         steps = integer_in_range(raw_value, "Skip count", 1, 20)
         for _ in range(steps):

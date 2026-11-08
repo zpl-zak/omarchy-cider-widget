@@ -60,6 +60,8 @@ test("validates and bounds status fields before exposing them", () => {
   assert.equal(Model.audioBadge(result.data.track), "AAC 256 kbps")
   assert.equal(result.data.track.positionSec, 100)
   assert.equal(result.data.track.artSource, "file://" + safePath)
+  assert.equal(result.data.track.inFavorites, true)
+  assert.equal(result.data.track.rating, 1)
   assert.equal(result.data.volume, 1)
   assert.equal(result.data.repeatMode, 2)
 })
@@ -127,6 +129,38 @@ test("builds queue metadata", () => {
   assert.equal(Model.queueMeta({ title: "Track", artist: "Artist", album: "Album" }), "Artist · Album")
 })
 
+test("keeps a dislike distinct from a favorite", () => {
+  const cacheRoot = "/home/test/.cache/omarchy-cider-widget/artwork"
+  const result = Model.parseStatusResponse(JSON.stringify({
+    ok: true,
+    data: {
+      connected: true,
+      playing: false,
+      track: {
+        id: "song-1",
+        title: "Song",
+        artist: "Artist",
+        inFavorites: true,
+        rating: -1,
+        durationSec: 10,
+        positionSec: 1
+      },
+      volume: 0,
+      shuffleMode: 0,
+      repeatMode: 0,
+      autoplay: false,
+      fetchedAtMs: 1
+    }
+  }), cacheRoot)
+  assert.equal(result.ok, true)
+  assert.equal(result.data.track.rating, -1)
+  assert.equal(result.data.track.inFavorites, false)
+  const loved = Model.trackWithRating(result.data.track, 1)
+  assert.equal(loved.rating, 1)
+  assert.equal(loved.inFavorites, true)
+  assert.equal(result.data.track.rating, -1)
+})
+
 test("updates track position without mutating the source", () => {
   const track = { title: "Song", durationSec: 100, positionSec: 5 }
   const updated = Model.trackWithPosition(track, 140)
@@ -146,6 +180,10 @@ test("builds only allowlisted helper action commands", () => {
   assert.deepEqual(
     Model.actionCommand("/plugin/cider-rpc.py", { name: "skipTo", value: 2 }),
     ["/usr/bin/python3", "-I", "-S", "/plugin/cider-rpc.py", "action", "skipTo", "2"]
+  )
+  assert.deepEqual(
+    Model.actionCommand("/plugin/cider-rpc.py", { name: "setRating", value: -1 }),
+    ["/usr/bin/python3", "-I", "-S", "/plugin/cider-rpc.py", "action", "setRating", "-1"]
   )
   assert.deepEqual(Model.actionCommand("/plugin/cider-rpc.py", { name: "deleteEverything" }), [])
 })

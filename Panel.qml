@@ -99,6 +99,20 @@ Panel {
     service.runAction("queueRemove", Number(service.upNext[index].queueIndex))
   }
 
+  function trackRating() {
+    return root.hasTrack ? Math.round(Number(root.service.track.rating || 0)) : 0
+  }
+
+  function toggleFavorite() {
+    if (!root.hasTrack) return false
+    return root.service.runAction("setRating", root.trackRating() === 1 ? 0 : 1)
+  }
+
+  function toggleSuggestLess() {
+    if (!root.hasTrack) return false
+    return root.service.runAction("setRating", root.trackRating() === -1 ? 0 : -1)
+  }
+
   onSettingsChanged: pushSettings()
   onServiceChanged: pushSettings()
   Component.onCompleted: pushSettings()
@@ -139,6 +153,8 @@ Panel {
     function playPause(): string { return root.service.runAction("playPause") ? "queued" : "unavailable" }
     function next(): string { return root.service.runAction("next") ? "queued" : "unavailable" }
     function previous(): string { return root.service.runAction("previous") ? "queued" : "unavailable" }
+    function favorite(): string { return root.toggleFavorite() ? "queued" : "unavailable" }
+    function suggestLess(): string { return root.toggleSuggestLess() ? "queued" : "unavailable" }
     function volume(value: string): string {
       var number = Number(value)
       if (!isFinite(number) || number < 0 || number > 1) return "volume must be between 0 and 1"
@@ -161,6 +177,7 @@ Panel {
         shuffleMode: root.service.shuffleMode,
         repeatMode: root.service.repeatMode,
         autoplay: root.service.autoplay,
+        rating: root.trackRating(),
         upNext: root.service.upNext.length,
         error: root.service.lastError || root.service.actionError
       })
@@ -212,6 +229,8 @@ Panel {
         else if (key === "s") root.service.runAction("toggleShuffle")
         else if (key === "r") root.service.runAction("toggleRepeat")
         else if (key === "a") root.service.runAction("toggleAutoplay")
+        else if (key === "f") root.toggleFavorite()
+        else if (key === "l") root.toggleSuggestLess()
         else if (key === "o") root.openCider()
       }
 
@@ -476,6 +495,18 @@ Panel {
             }
 
             Button {
+              iconText: root.trackRating() === -1 ? "󰔑" : "󰔒"
+              tooltipText: root.trackRating() === -1 ? "Undo suggest less" : "Suggest less"
+              selected: root.trackRating() === -1
+              enabled: root.hasTrack
+              foreground: root.foreground
+              accent: Color.accent
+              horizontalPadding: Style.spacing.controlPaddingX
+              verticalPadding: Style.spacing.controlPaddingY
+              onClicked: root.toggleSuggestLess()
+            }
+
+            Button {
               iconText: "󰒮"
               tooltipText: "Previous"
               foreground: root.foreground
@@ -501,6 +532,18 @@ Panel {
               horizontalPadding: Style.spacing.controlPaddingX
               verticalPadding: Style.spacing.controlPaddingY
               onClicked: root.service.runAction("next")
+            }
+
+            Button {
+              iconText: root.trackRating() === 1 ? "󰋑" : "󰋕"
+              tooltipText: root.trackRating() === 1 ? "Unfavorite" : "Favorite"
+              selected: root.trackRating() === 1
+              enabled: root.hasTrack
+              foreground: root.foreground
+              accent: Color.accent
+              horizontalPadding: Style.spacing.controlPaddingX
+              verticalPadding: Style.spacing.controlPaddingY
+              onClicked: root.toggleFavorite()
             }
 
             Button {
